@@ -6,7 +6,8 @@ from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import requests
-import random  # <-- YENİ EKLENDİ (Önbelleği kırmak için)
+import random
+import time
 
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -68,21 +69,26 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (GÜNCELLENMİŞ CACHE-BUSTER) ---
+# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (ZORLA GÜNCELLEME MODU) ---
 def piyasa_verileri_getir():
-    # 1. YÖNTEM: TRUNCGIL API (Önbellek Kırıcı Eklendi)
+    # Bu başlıklar sunucuya "Bana önbellekten (cache) veri verme, tazesini ver" der.
+    no_cache_headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Cache-Control': 'no-cache, no-store, must-revalidate', 
+        'Pragma': 'no-cache', 
+        'Expires': '0'
+    }
+
+    # 1. YÖNTEM: TRUNCGIL API (Rastgele sayı ile kandırarak)
     try:
-        # URL'nin sonuna rastgele sayı ekliyoruz (?v=0.123123) ki sistem eski veriyi getirmesin.
-        url = f"https://finans.truncgil.com/today.json?v={random.random()}"
+        # URL sonuna rastgele sayı ekliyoruz ki tarayıcı yeni sayfa sansın
+        url = f"https://finans.truncgil.com/today.json?random_id={random.randint(1, 999999)}"
         
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        # timeout süresini kısalttık ki takılmasın
-        response = requests.get(url, headers=headers, timeout=5)
+        response = requests.get(url, headers=no_cache_headers, timeout=5)
         
         if response.status_code == 200:
             data = response.json()
+            # String dönüşümleri (Virgülü noktaya çevir)
             usd = float(data['USD']['satis'].replace(",", "."))
             eur = float(data['EUR']['satis'].replace(",", "."))
             gold = float(data['gram-altin']['satis'].replace(",", "."))
@@ -90,21 +96,20 @@ def piyasa_verileri_getir():
     except:
         pass 
 
-    # 2. YÖNTEM: GLOBAL API
+    # 2. YÖNTEM: GLOBAL API (Yedek)
     try:
-        r_usd = requests.get(f"https://api.frankfurter.app/latest?from=USD&to=TRY&v={random.random()}", timeout=3).json()
+        r_usd = requests.get(f"https://api.frankfurter.app/latest?from=USD&to=TRY&v={time.time()}", timeout=3).json()
         usd = r_usd["rates"]["TRY"]
-        r_eur = requests.get(f"https://api.frankfurter.app/latest?from=EUR&to=TRY&v={random.random()}", timeout=3).json()
+        r_eur = requests.get(f"https://api.frankfurter.app/latest?from=EUR&to=TRY&v={time.time()}", timeout=3).json()
         eur = r_eur["rates"]["TRY"]
-        gold_ons = 2650 
-        ham_gold = (gold_ons / 31.1035) * usd
-        gold = ham_gold * 1.75 
+        # Altın hesabı (Global Ons -> TL)
+        gold = (2650 / 31.1035) * usd * 1.02 # Ufak makas farkı
         return usd, eur, gold
     except:
         pass 
 
-    # 3. YÖNTEM: VARSAYILAN
-    return 36.50, 38.20, 6370.00
+    # 3. YÖNTEM: VARSAYILAN DEĞERLER (Hiçbiri çalışmazsa)
+    return 43.15, 45.20, 3600.00
 
 # --- ANA VERİYİ ÇEK ---
 try:
@@ -117,26 +122,30 @@ except Exception as e:
 with st.sidebar:
     st.header("🌍 Canlı Piyasa")
     
-    # GÜNCELLEME BUTONU (YENİ)
+    # GÜNCELLEME BUTONU
     if st.button("🔄 Piyasayı Güncelle"):
-        st.cache_data.clear() # Varsa önbelleği temizle
-        st.rerun() # Sayfayı yenile
+        st.cache_data.clear()
+        st.rerun()
 
     # Verileri Çek
     usd_val, eur_val, gold_val = piyasa_verileri_getir()
     
+    # Session State'e kaydet (Portföy hesabı için)
+    st.session_state['piyasa_usd'] = usd_val
+    st.session_state['piyasa_eur'] = eur_val
+    st.session_state['piyasa_gold'] = gold_val
+
     # Ekrana Yazdır
     c1, c2 = st.columns(2)
     c1.metric("Dolar", f"{usd_val:.2f} ₺")
     c2.metric("Euro", f"{eur_val:.2f} ₺")
     
     st.metric("Gr Altın (24K)", f"{gold_val:,.2f} ₺")
-    st.caption(f"Son Kontrol: {datetime.now().strftime('%H:%M:%S')}") # Saati gösterelim ki emin ol
     
-    # Hafızaya at
-    st.session_state['piyasa_usd'] = usd_val
-    st.session_state['piyasa_eur'] = eur_val
-    st.session_state['piyasa_gold'] = gold_val
+    # GÜNCELLEME SAATİ (Verinin donmadığını kanıtlamak için)
+    simdi = datetime.now().strftime("%H:%M:%S")
+    st.caption(f"⏱️ Son Güncelleme: {simdi}")
+    st.info("Not: Ücretsiz veriler borsadan 15dk gecikmeli gelebilir.")
     
     st.divider()
     
@@ -254,7 +263,7 @@ with st.sidebar:
                 st.success("Silindi!")
                 st.rerun()
 
-# --- DASHBOARD (AKILLI KAR/ZARAR HESAPLAMALI) ---
+# --- DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
