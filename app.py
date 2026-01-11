@@ -71,34 +71,63 @@ def kayit_sil(satir_no):
 # En tepeye bu kütüphaneyi eklediğinden emin ol (import kısımlarına):
 import requests 
 
-# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (GARANTİLİ YÖNTEM - API) ---
+# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (TÜRKİYE ÖZEL - TRUNCGIL API) ---
 def piyasa_verileri_getir():
     try:
-        # 1. Dolar Kuru (USD -> TRY)
-        # Frankfurter API: Ücretsiz, keysiz ve çok hızlıdır.
-        url_usd = "https://api.frankfurter.app/latest?from=USD&to=TRY"
-        r_usd = requests.get(url_usd)
-        usd_try = r_usd.json()["rates"]["TRY"]
+        # Türkiye Finans Verileri (Ücretsiz ve Kayıt Gerektirmez)
+        # Bu API direkt serbest piyasa/banka verisi verir.
+        url = "https://finans.truncgil.com/today.json"
         
-        # 2. Euro Kuru (EUR -> TRY)
-        url_eur = "https://api.frankfurter.app/latest?from=EUR&to=TRY"
-        r_eur = requests.get(url_eur)
-        eur_try = r_eur.json()["rates"]["TRY"]
+        # Tarayıcı gibi görünmek için header ekleyelim (Engel yememek için)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(url, headers=headers, timeout=5)
+        data = response.json()
         
-        # 3. Gram Altın Hesabı
-        # Ücretsiz API'lerde anlık "Altın Ons" verisi bulmak zordur (Genelde ücretlidir).
-        # Bu yüzden burada "Sabit Ons" varsayımı veya Dolar endeksli hesap kullanacağız.
-        # Şu an Ons yaklaşık 2650$ seviyesinde. 
-        # Formül: (Ons / 31.10) * Dolar Kuru
-        ons_fiyat = 2650 # Yaklaşık ortalama değer (Otomatik güncellenmez ama fikir verir)
-        gram_altin = (ons_fiyat / 31.1035) * usd_try
+        # Verileri çek (Sözlükten 'Satış' fiyatını alıyoruz)
+        # API bazen string döndürür, floata çevirip temizleyelim.
+        usd_try = float(data['USD']['satis'].replace(",", "."))
+        eur_try = float(data['EUR']['satis'].replace(",", "."))
+        gram_altin = float(data['gram-altin']['satis'].replace(",", "."))
         
         return usd_try, eur_try, gram_altin
 
     except Exception as e:
-        # Hata olursa sessizce 0 döndür, uygulamayı çökertme
-        # Geliştirici notu: st.write(e) ile hatayı görebilirsin.
+        # Hata olursa 0 döndür
         return 0, 0, 0
+
+# --- SOL MENÜ (GÜNCELLENMİŞ HALİ) ---
+with st.sidebar:
+    st.header("🌍 Canlı Piyasa")
+    
+    # 1. Otomatik Verileri Çekmeyi Dene
+    usd, eur, gold = piyasa_verileri_getir()
+    
+    # 2. Kullanıcıya "Elle Düzeltme" İmkanı Ver
+    elle_giris = st.checkbox("Fiyatları Elle Gir / Düzelt")
+    
+    if elle_giris:
+        usd = st.number_input("Dolar Kuru", value=usd if usd > 0 else 35.0, format="%.2f")
+        eur = st.number_input("Euro Kuru", value=eur if eur > 0 else 38.0, format="%.2f")
+        gold = st.number_input("Gr Altın Fiyatı", value=gold if gold > 0 else 3000.0, format="%.2f")
+        st.info("👆 Fiyatlar senin girdiğin değerlere göre hesaplanacak.")
+    else:
+        # API Başarılıysa Göster
+        if usd > 0:
+            c_p1, c_p2 = st.columns(2)
+            c_p1.metric("Dolar", f"{usd:.2f} ₺")
+            c_p2.metric("Euro", f"{eur:.2f} ₺")
+            st.metric("Gr Altın (24K)", f"{gold:,.2f} ₺")
+            st.caption(f"Veri Kaynağı: Truncgil (Serbest Piyasa)")
+        else:
+            st.warning("İnternet verisi alınamadı. Lütfen 'Elle Gir' kutusunu işaretle.")
+            # Veri yoksa varsayılan 0 kalmasın, manuel açtır
+            usd, eur, gold = 0, 0, 0
+
+    st.divider()
+    
+    # --- İŞLEM EKLEME (Kalan Kodların Aynen Devam Eder) ---
+    st.header("💸 İşlem Ekle")
+    # ... (Buradan aşağısı eski kodunla aynı kalacak) ...
 # --- ANA VERİYİ ÇEK ---
 try:
     df = veri_yukle()
@@ -315,5 +344,6 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
+
 
 
