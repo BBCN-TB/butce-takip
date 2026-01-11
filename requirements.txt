@@ -3,6 +3,5 @@ pandas
 plotly
 gspread
 oauth2client
-yfinance
-python-dateutil
 requests
+beautifulsoup4
