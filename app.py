@@ -68,21 +68,31 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ ---
+# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (GÜNCELLENMİŞ) ---
 def piyasa_verileri_getir():
     try:
-        # USD ve EUR (yfinance sembolleri: TRY=X)
-        tickers = yf.Tickers("TRY=X EURTRY=X GC=F")
-        usd_try = tickers.tickers["TRY=X"].history(period="1d")['Close'].iloc[-1]
-        eur_try = tickers.tickers["EURTRY=X"].history(period="1d")['Close'].iloc[-1]
+        # Tek tek çekmeyi deneyelim (Daha garantidir)
+        usd_data = yf.Ticker("TRY=X").history(period="1d")
+        eur_data = yf.Ticker("EURTRY=X").history(period="1d")
+        gold_data = yf.Ticker("GC=F").history(period="1d")
+
+        # Veri boş mu kontrol et
+        if usd_data.empty or eur_data.empty or gold_data.empty:
+            st.error("Yahoo Finance veri döndürmedi (Boş veri).")
+            return 0, 0, 0
+
+        usd_try = usd_data['Close'].iloc[-1]
+        eur_try = eur_data['Close'].iloc[-1]
+        gold_ons = gold_data['Close'].iloc[-1]
         
-        # Altın Ons ($) -> Gram Altın (TL) Hesabı
-        # Formül: (Ons Fiyatı / 31.1035) * Dolar Kuru
-        gold_ons = tickers.tickers["GC=F"].history(period="1d")['Close'].iloc[-1]
+        # Gram Altın Hesabı: (Ons / 31.10) * Dolar Kuru
         gram_altin = (gold_ons / 31.1035) * usd_try
         
         return usd_try, eur_try, gram_altin
-    except:
+
+    except Exception as e:
+        # Hatayı ekrana yazdıralım ki sebebini görelim
+        st.error(f"Piyasa Hatası Detayı: {e}")
         return 0, 0, 0
 
 # --- ANA VERİYİ ÇEK ---
@@ -301,3 +311,4 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
+
