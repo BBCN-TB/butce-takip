@@ -5,10 +5,6 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import requests
-from bs4 import BeautifulSoup
-import random
-import time
 
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -68,81 +64,6 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# --- GELİŞMİŞ VERİ ÇEKME MODÜLÜ (3 KATMANLI KORUMA) ---
-def piyasa_verileri_getir():
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-    }
-    
-    usd, eur, gold, silver = 0, 0, 0, 0
-    kaynak = "Bilinmiyor"
-
-    # --- PLAN A: ALTIN.IN (Kapalıçarşı Fiyatları - Harem ile aynıdır ve daha kolay çekilir) ---
-    try:
-        url = f"https://altin.in/?v={int(time.time())}"
-        r = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(r.content, "html.parser")
-        
-        # Altın.in sitesindeki ID'ler sabittir
-        dolar_div = soup.find("li", {"id": "dolar"}).find("h2").text
-        euro_div = soup.find("li", {"id": "euro"}).find("h2").text
-        gram_div = soup.find("li", {"id": "gram-altin"}).find("h2").text
-        
-        # Verileri Temizle
-        usd = float(dolar_div.replace(".", "").replace(",", "."))
-        eur = float(euro_div.replace(".", "").replace(",", "."))
-        gold = float(gram_div.replace(".", "").replace(",", "."))
-        
-        # Gümüş Altın.in'de yoksa Harem'den veya hesaplama ile
-        silver = gold / 78.0 # Yaklaşık parite (Yedek)
-        
-        if usd > 0:
-            kaynak = "Altin.in (Kapalıçarşı)"
-    except:
-        pass
-
-    # --- PLAN B: GENELPARA JSON (Eğer Plan A çalışmazsa) ---
-    if usd == 0:
-        try:
-            url_json = "https://api.genelpara.com/embed/para-birimleri.json"
-            r_json = requests.get(url_json, headers=headers, timeout=5)
-            data = r_json.json()
-            
-            usd = float(data["USD"]["satis"])
-            eur = float(data["EUR"]["satis"])
-            gold = float(data["GA"]["satis"]) # Gram Altın
-            silver = float(data["GAG"]["satis"]) # Gram Gümüş
-            
-            if usd > 0:
-                kaynak = "GenelPara API"
-        except:
-            pass
-
-    # --- PLAN C: MATEMATİKSEL HESAPLAMA (Son Çare - Asla 0 Gösterme) ---
-    # Global veriyi alıp Türkiye Makası (%4) ekleriz.
-    if usd == 0:
-        try:
-            # Global Veri (Frankfurter)
-            r_global = requests.get("https://api.frankfurter.app/latest?from=USD&to=TRY").json()
-            usd_global = r_global["rates"]["TRY"]
-            
-            # Türkiye Serbest Piyasa Farkı (Yaklaşık %3-%4)
-            makas = 1.04 
-            
-            usd = usd_global * makas
-            eur = (usd / 1.05) # Euro/Dolar paritesi yaklaşık
-            gold = (2665 / 31.10) * usd # Ons üzerinden hesap
-            silver = (31.50 / 31.10) * usd # Gümüş Ons üzerinden
-            
-            kaynak = "Otomatik Hesaplama (Yedek)"
-        except:
-             # İNTERNET YOKSA EN SON BİLİNEN FİYATLAR (MANUEL)
-             return 43.20, 45.50, 6400.00, 80.00, "Çevrimdışı Mod"
-
-    return usd, eur, gold, silver, kaynak
-
 # --- ANA VERİYİ ÇEK ---
 try:
     df = veri_yukle()
@@ -152,14 +73,15 @@ except Exception as e:
 
 # --- SOL MENÜ ---
 with st.sidebar:
-    st.header("🌍 Canlı Piyasa")
+    st.header("🌍 Piyasa Fiyatları (Manuel)")
+    st.info("İnternet verileri hatalı olduğu için fiyatları buradan güncelleyebilirsin.")
     
-    if st.button("🔄 Piyasayı Güncelle"):
-        st.cache_data.clear()
-        st.rerun()
-
-    # Verileri Çek
-    usd_val, eur_val, gold_val, silver_val, kaynak_adi = piyasa_verileri_getir()
+    # Kullanıcıdan Manuel Fiyat Alma (Varsayılanlar bugünkü ortalama Harem fiyatlarıdır)
+    # Bu değerleri değiştirdiğinde tüm portföy anında yeniden hesaplanır.
+    usd_val = st.number_input("Dolar Kuru (₺)", value=43.20, step=0.01, format="%.2f")
+    eur_val = st.number_input("Euro Kuru (₺)", value=50.25, step=0.01, format="%.2f")
+    gold_val = st.number_input("Gr Altın (₺)", value=6400.00, step=10.0, format="%.2f")
+    silver_val = st.number_input("Gr Gümüş (₺)", value=80.00, step=1.0, format="%.2f")
     
     # Session'a kaydet
     st.session_state['piyasa_usd'] = usd_val
@@ -167,21 +89,6 @@ with st.sidebar:
     st.session_state['piyasa_gold'] = gold_val
     st.session_state['piyasa_silver'] = silver_val
 
-    # Ekrana Yazdır
-    c1, c2 = st.columns(2)
-    c1.metric("Dolar", f"{usd_val:.2f} ₺")
-    c2.metric("Euro", f"{eur_val:.2f} ₺")
-    
-    c3, c4 = st.columns(2)
-    c3.metric("Gr Altın", f"{gold_val:,.2f} ₺")
-    c4.metric("Gr Gümüş", f"{silver_val:,.2f} ₺")
-    
-    st.caption(f"Veri Kaynağı: {kaynak_adi}")
-    
-    # HATA VARSA UYARI VER (0 kontrolü)
-    if usd_val == 0:
-        st.error("⚠️ Piyasa verileri çekilemedi! İnternet bağlantısını kontrol edin.")
-    
     st.divider()
     
     # --- İŞLEM EKLEME ---
@@ -298,7 +205,7 @@ with st.sidebar:
                 st.success("Silindi!")
                 st.rerun()
 
-# --- DASHBOARD ---
+# --- DASHBOARD (AKILLI KAR/ZARAR HESAPLAMALI) ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
