@@ -6,8 +6,8 @@ from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import requests
+from bs4 import BeautifulSoup
 import random
-import time
 
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -45,10 +45,8 @@ def veri_yukle():
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
     data = worksheet.get_all_records()
-    
     if not data:
         return pd.DataFrame(columns=["Tarih", "Ay", "Yıl", "Kategori", "Aciklama", "Tutar", "Tur"])
-        
     df = pd.DataFrame(data)
     if not df.empty and "Tutar" in df.columns:
         df["Tutar"] = df["Tutar"].astype(str).str.replace(" TL", "").str.replace(" ₺", "").str.replace(".", "").str.replace(",", ".").astype(float)
@@ -69,47 +67,63 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (ZORLA GÜNCELLEME MODU) ---
+# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (DOVIZ.COM & HAREM SCRAPING) ---
 def piyasa_verileri_getir():
-    # Bu başlıklar sunucuya "Bana önbellekten (cache) veri verme, tazesini ver" der.
-    no_cache_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Cache-Control': 'no-cache, no-store, must-revalidate', 
-        'Pragma': 'no-cache', 
-        'Expires': '0'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
+    
+    usd, eur, gold = 0, 0, 0
 
-    # 1. YÖNTEM: TRUNCGIL API (Rastgele sayı ile kandırarak)
     try:
-        # URL sonuna rastgele sayı ekliyoruz ki tarayıcı yeni sayfa sansın
-        url = f"https://finans.truncgil.com/today.json?random_id={random.randint(1, 999999)}"
+        # 1. GRAM ALTIN (Harem - Doviz.com'dan)
+        url_harem = "https://altin.doviz.com/harem"
+        r_gold = requests.get(url_harem, headers=headers, timeout=10)
+        soup_gold = BeautifulSoup(r_gold.content, "html.parser")
         
-        response = requests.get(url, headers=no_cache_headers, timeout=5)
-        
-        if response.status_code == 200:
-            data = response.json()
-            # String dönüşümleri (Virgülü noktaya çevir)
-            usd = float(data['USD']['satis'].replace(",", "."))
-            eur = float(data['EUR']['satis'].replace(",", "."))
-            gold = float(data['gram-altin']['satis'].replace(",", "."))
-            return usd, eur, gold
-    except:
-        pass 
+        # Harem Gram Altın satırını bul
+        # Sitedeki tablo yapısına göre "Harem Gram Altın" yazan satırı arıyoruz
+        gold_row = soup_gold.find("a", string="Harem Gram Altın")
+        if gold_row:
+            # Satış fiyatı genellikle 3. sütundadır (Ad, Alış, Satış...)
+            # Parent (td) -> Parent (tr) -> Children
+            row = gold_row.find_parent("tr")
+            cols = row.find_all("td")
+            # 2. index genellikle 'Satış' sütunudur
+            gold_text = cols[2].text.strip()
+            gold = float(gold_text.replace(".", "").replace(",", "."))
+        else:
+            # Yedek: Eğer Harem sayfasını parse edemezsek ana sayfadan al
+            # Ancak kullanıcı Harem istediği için burada 0 dönüp aşağıda genelden tamamlayabiliriz
+            pass
 
-    # 2. YÖNTEM: GLOBAL API (Yedek)
-    try:
-        r_usd = requests.get(f"https://api.frankfurter.app/latest?from=USD&to=TRY&v={time.time()}", timeout=3).json()
-        usd = r_usd["rates"]["TRY"]
-        r_eur = requests.get(f"https://api.frankfurter.app/latest?from=EUR&to=TRY&v={time.time()}", timeout=3).json()
-        eur = r_eur["rates"]["TRY"]
-        # Altın hesabı (Global Ons -> TL)
-        gold = (2650 / 31.1035) * usd * 1.02 # Ufak makas farkı
+        # 2. DOLAR VE EURO (Doviz.com Ana Sayfadan - En güncel serbest piyasa oradadır)
+        url_genel = "https://www.doviz.com/"
+        r_genel = requests.get(url_genel, headers=headers, timeout=10)
+        soup_genel = BeautifulSoup(r_genel.content, "html.parser")
+        
+        # Dolar Satış
+        usd_tag = soup_genel.find("span", {"data-socket-key": "USD", "data-socket-type": "satis"})
+        if usd_tag:
+            usd = float(usd_tag.text.strip().replace(".", "").replace(",", "."))
+            
+        # Euro Satış
+        eur_tag = soup_genel.find("span", {"data-socket-key": "EUR", "data-socket-type": "satis"})
+        if eur_tag:
+            eur = float(eur_tag.text.strip().replace(".", "").replace(",", "."))
+
+        # EĞER HAREM'DEN ALTIN ÇEKİLEMEDİYSE ANA SAYFADAN GRAM ALTIN AL
+        if gold == 0:
+             gold_tag = soup_genel.find("span", {"data-socket-key": "gram-altin", "data-socket-type": "satis"})
+             if gold_tag:
+                 gold = float(gold_tag.text.strip().replace(".", "").replace(",", "."))
+
         return usd, eur, gold
-    except:
-        pass 
 
-    # 3. YÖNTEM: VARSAYILAN DEĞERLER (Hiçbiri çalışmazsa)
-    return 43.15, 45.20, 3600.00
+    except Exception as e:
+        # Hata durumunda (İnternet yoksa) varsayılan değerler
+        print(f"Hata: {e}")
+        return 0, 0, 0
 
 # --- ANA VERİYİ ÇEK ---
 try:
@@ -122,7 +136,6 @@ except Exception as e:
 with st.sidebar:
     st.header("🌍 Canlı Piyasa")
     
-    # GÜNCELLEME BUTONU
     if st.button("🔄 Piyasayı Güncelle"):
         st.cache_data.clear()
         st.rerun()
@@ -130,7 +143,13 @@ with st.sidebar:
     # Verileri Çek
     usd_val, eur_val, gold_val = piyasa_verileri_getir()
     
-    # Session State'e kaydet (Portföy hesabı için)
+    # Eğer veri 0 gelirse (Hata olursa) Session'daki eski veriyi koru, yoksa manuel değer gir
+    if usd_val == 0:
+        usd_val = st.session_state.get('piyasa_usd', 36.50)
+        eur_val = st.session_state.get('piyasa_eur', 38.50)
+        gold_val = st.session_state.get('piyasa_gold', 6350.00)
+    
+    # Session State'e kaydet
     st.session_state['piyasa_usd'] = usd_val
     st.session_state['piyasa_eur'] = eur_val
     st.session_state['piyasa_gold'] = gold_val
@@ -142,10 +161,7 @@ with st.sidebar:
     
     st.metric("Gr Altın (24K)", f"{gold_val:,.2f} ₺")
     
-    # GÜNCELLEME SAATİ (Verinin donmadığını kanıtlamak için)
-    simdi = datetime.now().strftime("%H:%M:%S")
-    st.caption(f"⏱️ Son Güncelleme: {simdi}")
-    st.info("Not: Ücretsiz veriler borsadan 15dk gecikmeli gelebilir.")
+    st.caption(f"Veri Kaynağı: Doviz.com / Harem")
     
     st.divider()
     
@@ -263,7 +279,7 @@ with st.sidebar:
                 st.success("Silindi!")
                 st.rerun()
 
-# --- DASHBOARD ---
+# --- DASHBOARD (AKILLI KAR/ZARAR HESAPLAMALI) ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
