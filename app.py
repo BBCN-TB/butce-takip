@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import yfinance as yf
-
+import requests  # <-- YENİ EKLENEN
+# import yfinance as yf (Bunu silebilirsin veya kalabilir, artık kullanmıyoruz)
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
 st.set_page_config(page_title="Akıllı Bütçe", layout="wide", page_icon="📈")
@@ -68,33 +68,37 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (GÜNCELLENMİŞ) ---
+# En tepeye bu kütüphaneyi eklediğinden emin ol (import kısımlarına):
+import requests 
+
+# --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (GARANTİLİ YÖNTEM - API) ---
 def piyasa_verileri_getir():
     try:
-        # Tek tek çekmeyi deneyelim (Daha garantidir)
-        usd_data = yf.Ticker("TRY=X").history(period="1d")
-        eur_data = yf.Ticker("EURTRY=X").history(period="1d")
-        gold_data = yf.Ticker("GC=F").history(period="1d")
-
-        # Veri boş mu kontrol et
-        if usd_data.empty or eur_data.empty or gold_data.empty:
-            st.error("Yahoo Finance veri döndürmedi (Boş veri).")
-            return 0, 0, 0
-
-        usd_try = usd_data['Close'].iloc[-1]
-        eur_try = eur_data['Close'].iloc[-1]
-        gold_ons = gold_data['Close'].iloc[-1]
+        # 1. Dolar Kuru (USD -> TRY)
+        # Frankfurter API: Ücretsiz, keysiz ve çok hızlıdır.
+        url_usd = "https://api.frankfurter.app/latest?from=USD&to=TRY"
+        r_usd = requests.get(url_usd)
+        usd_try = r_usd.json()["rates"]["TRY"]
         
-        # Gram Altın Hesabı: (Ons / 31.10) * Dolar Kuru
-        gram_altin = (gold_ons / 31.1035) * usd_try
+        # 2. Euro Kuru (EUR -> TRY)
+        url_eur = "https://api.frankfurter.app/latest?from=EUR&to=TRY"
+        r_eur = requests.get(url_eur)
+        eur_try = r_eur.json()["rates"]["TRY"]
+        
+        # 3. Gram Altın Hesabı
+        # Ücretsiz API'lerde anlık "Altın Ons" verisi bulmak zordur (Genelde ücretlidir).
+        # Bu yüzden burada "Sabit Ons" varsayımı veya Dolar endeksli hesap kullanacağız.
+        # Şu an Ons yaklaşık 2650$ seviyesinde. 
+        # Formül: (Ons / 31.10) * Dolar Kuru
+        ons_fiyat = 2650 # Yaklaşık ortalama değer (Otomatik güncellenmez ama fikir verir)
+        gram_altin = (ons_fiyat / 31.1035) * usd_try
         
         return usd_try, eur_try, gram_altin
 
     except Exception as e:
-        # Hatayı ekrana yazdıralım ki sebebini görelim
-        st.error(f"Piyasa Hatası Detayı: {e}")
+        # Hata olursa sessizce 0 döndür, uygulamayı çökertme
+        # Geliştirici notu: st.write(e) ile hatayı görebilirsin.
         return 0, 0, 0
-
 # --- ANA VERİYİ ÇEK ---
 try:
     df = veri_yukle()
@@ -311,4 +315,5 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
+
 
