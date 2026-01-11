@@ -119,63 +119,149 @@ def piyasa_verileri_getir():
     # Uygulama hata verip kapanmasın diye bu değerleri döndürür.
     return 36.50, 38.20, 6370.00
 
-# --- SOL MENÜ KODU ---
+# --- SOL MENÜ (SADE VE OTOMATİK) ---
 with st.sidebar:
     st.header("🌍 Canlı Piyasa")
     
-    # Verileri Çek
+    # Verileri Çek (Fonksiyon yukarıda zaten tanımlı, direkt kullanıyoruz)
     usd_val, eur_val, gold_val = piyasa_verileri_getir()
     
-    # Elle Düzeltme Kutusu
-    elle_giris = st.checkbox("Fiyatları Düzenle")
+    # Ekrana Yazdır (Sade Tasarım)
+    # Dolar ve Euro yan yana
+    c1, c2 = st.columns(2)
+    c1.metric("Dolar", f"{usd_val:.2f} ₺")
+    c2.metric("Euro", f"{eur_val:.2f} ₺")
     
-    if elle_giris:
-        usd_val = st.number_input("Dolar", value=usd_val, format="%.2f")
-        eur_val = st.number_input("Euro", value=eur_val, format="%.2f")
-        gold_val = st.number_input("Gr Altın", value=gold_val, format="%.2f")
-    else:
-        # Metrikleri Göster
-        c1, c2 = st.columns(2)
-        c1.metric("Dolar", f"{usd_val:.2f} ₺")
-        c2.metric("Euro", f"{eur_val:.2f} ₺")
-        st.metric("Gr Altın", f"{gold_val:,.2f} ₺")
+    # Altın alt satırda tek başına
+    st.metric("Gr Altın (24K)", f"{gold_val:,.2f} ₺")
     
-    # Değerleri diğer fonksiyonlarda kullanmak için Session State'e atalım
+    # Küçük bilgi notu (İstersen silebilirsin)
+    st.caption("Veriler canlı güncellenmektedir.")
+    
+    # Değerleri diğer hesaplamalar (Portföy vs) için hafızaya atıyoruz
     st.session_state['piyasa_usd'] = usd_val
     st.session_state['piyasa_eur'] = eur_val
     st.session_state['piyasa_gold'] = gold_val
     
     st.divider()
-    # ... Kodun geri kalanı buradan devam edecek ...
+    
+    # --- İŞLEM EKLEME BÖLÜMÜ (BURADAN SONRASI AYNEN DEVAM) ---
+    st.header("💸 İşlem Ekle")
+    
+    tarih_giris = st.date_input("Tarih", datetime.today())
+    tur_giris = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"])
+    
+    # Taksit Modülü
+    taksit_sayisi = 1
+    if tur_giris == "Gider":
+        is_taksit = st.checkbox("Taksitli mi?")
+        if is_taksit:
+            taksit_sayisi = st.slider("Taksit Sayısı", 2, 12, 3)
+            st.caption(f"ℹ️ Tutar {taksit_sayisi} aya bölünecek.")
+    
+    miktar_bilgisi = ""
+    
+    if tur_giris == "Gider":
+        kategoriler = ["Kredi Kartı", "Mutfak", "Fatura", "Kira", "Ulaşım", "Market", "Sağlık", "Giyim", "Eğitim", "Diğer"]
+    elif tur_giris == "Gelir":
+        kategoriler = ["Maaş", "Ek Gelir", "Prim", "Borç Alacak"]
+    else: # YATIRIM
+        kategoriler = ["Altın", "Gümüş", "Döviz", "Borsa", "Fon", "Bitcoin", "Bes"]
+        # Miktar bilgisini sadeleştirdik
+        miktar = st.text_input("Miktar (Örn: 5 Gram)")
+        if miktar: miktar_bilgisi = f"[{miktar}] "
 
-# --- SOL MENÜ (GÜNCELLENMİŞ HALİ) ---
-with st.sidebar:
-    st.header("🌍 Canlı Piyasa")
+    kategori_giris = st.selectbox("Kategori", kategoriler)
+    aciklama_giris = st.text_input("Açıklama")
+    tutar_giris = st.number_input("Toplam Tutar (₺)", min_value=0.0, format="%.2f")
     
-    # 1. Otomatik Verileri Çekmeyi Dene
-    usd, eur, gold = piyasa_verileri_getir()
-    
-    # 2. Kullanıcıya "Elle Düzeltme" İmkanı Ver
-    elle_giris = st.checkbox("Fiyatları Elle Gir / Düzelt")
-    
-    if elle_giris:
-        usd = st.number_input("Dolar Kuru", value=usd if usd > 0 else 35.0, format="%.2f")
-        eur = st.number_input("Euro Kuru", value=eur if eur > 0 else 38.0, format="%.2f")
-        gold = st.number_input("Gr Altın Fiyatı", value=gold if gold > 0 else 3000.0, format="%.2f")
-        st.info("👆 Fiyatlar senin girdiğin değerlere göre hesaplanacak.")
-    else:
-        # API Başarılıysa Göster
-        if usd > 0:
-            c_p1, c_p2 = st.columns(2)
-            c_p1.metric("Dolar", f"{usd:.2f} ₺")
-            c_p2.metric("Euro", f"{eur:.2f} ₺")
-            st.metric("Gr Altın (24K)", f"{gold:,.2f} ₺")
-            st.caption(f"Veri Kaynağı: Truncgil (Serbest Piyasa)")
-        else:
-            st.warning("İnternet verisi alınamadı. Lütfen 'Elle Gir' kutusunu işaretle.")
-            # Veri yoksa varsayılan 0 kalmasın, manuel açtır
-            usd, eur, gold = 0, 0, 0
+    if st.button("Kaydet 💾", type="primary"):
+        if tutar_giris > 0:
+            with st.spinner('İşleniyor...'):
+                ay_map = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
+                          7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}
+                
+                rows_to_add = []
+                
+                # TAKSİT MANTIĞI
+                if taksit_sayisi > 1:
+                    aylik_tutar = tutar_giris / taksit_sayisi
+                    for i in range(taksit_sayisi):
+                        gelecek_tarih = tarih_giris + relativedelta(months=i)
+                        yeni_aciklama = f"{aciklama_giris} ({i+1}/{taksit_sayisi}. Taksit)"
+                        
+                        rows_to_add.append({
+                            "Tarih": gelecek_tarih,
+                            "Ay": ay_map[gelecek_tarih.month],
+                            "Yıl": gelecek_tarih.year,
+                            "Kategori": kategori_giris,
+                            "Aciklama": yeni_aciklama,
+                            "Tutar": aylik_tutar,
+                            "Tur": tur_giris
+                        })
+                else:
+                    # NORMAL KAYIT
+                    final_aciklama = miktar_bilgisi + aciklama_giris if aciklama_giris else miktar_bilgisi + tur_giris
+                    rows_to_add.append({
+                        "Tarih": tarih_giris,
+                        "Ay": ay_map[tarih_giris.month],
+                        "Yıl": tarih_giris.year,
+                        "Kategori": kategori_giris,
+                        "Aciklama": final_aciklama,
+                        "Tutar": tutar_giris,
+                        "Tur": tur_giris
+                    })
+                
+                yeni_veri = pd.DataFrame(rows_to_add)
+                veri_kaydet(yeni_veri)
+                
+            st.success(f"{len(rows_to_add)} adet kayıt eklendi!")
+            st.rerun()
 
+    # --- SABİT GİDER KOPYALAMA ---
+    st.divider()
+    with st.expander("🔄 Geçen Ayın Sabitlerini Kopyala"):
+        if st.button("Kopyala ve Ekle"):
+            if not df.empty:
+                bugun = datetime.today()
+                gecen_ay_tarih = bugun - relativedelta(months=1)
+                gecen_ay_isim = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
+                                 7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}[gecen_ay_tarih.month]
+                
+                sabit_kategoriler = ["Kira", "Fatura", "Aidat", "Eğitim", "İnternet"]
+                
+                kopya_df = df[
+                    (df["Ay"] == gecen_ay_isim) & 
+                    (df["Yıl"] == gecen_ay_tarih.year) & 
+                    (df["Kategori"].isin(sabit_kategoriler))
+                ].copy()
+                
+                if not kopya_df.empty:
+                    kopya_df["Tarih"] = bugun.strftime("%Y-%m-%d")
+                    kopya_df["Ay"] = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
+                          7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}[bugun.month]
+                    kopya_df["Yıl"] = bugun.year
+                    kopya_df["Aciklama"] = kopya_df["Aciklama"] + " (Kopya)"
+                    
+                    with st.spinner('Kopyalanıyor...'):
+                        veri_kaydet(kopya_df)
+                    st.success(f"{len(kopya_df)} adet sabit gider kopyalandı!")
+                    st.rerun()
+                else:
+                    st.warning("Geçen ay uygun sabit gider bulunamadı.")
+
+    # SİLME BÖLÜMÜ
+    st.divider()
+    if not df.empty:
+        with st.expander("🗑️ Kayıt Sil"):
+            df_gosterim = df.reset_index().sort_index(ascending=False)
+            secenekler = df_gosterim.apply(lambda x: f"NO: {x['index']} | {x['Tur']} | {x['Kategori']} | {x['Tutar']:,.2f} ₺", axis=1)
+            sil_secim = st.selectbox("Silinecek Kayıt:", secenekler)
+            if st.button("Seçiliyi Sil"):
+                silinecek_index = int(sil_secim.split("|")[0].replace("NO:", "").strip())
+                kayit_sil(silinecek_index)
+                st.success("Silindi!")
+                st.rerun()
     st.divider()
     
     # --- İŞLEM EKLEME (Kalan Kodların Aynen Devam Eder) ---
@@ -397,6 +483,7 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
+
 
 
 
