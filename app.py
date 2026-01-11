@@ -8,7 +8,41 @@ from oauth2client.service_account import ServiceAccountCredentials
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"  # Google Sheet dosyanın tam adı
 st.set_page_config(page_title="Bulut Bütçe", layout="wide", page_icon="☁️")
+# --- GİRİŞ KONTROLÜ (BEKÇİ) ---
+def check_password():
+    """Giriş yapılmadıysa şifre sorar, doğruysa True döner."""
+    
+    # 1. Eğer zaten giriş yapıldıysa direkt geç
+    if st.session_state.get("password_correct", False):
+        return True
 
+    # 2. Şifre giriş kutusunu göster
+    st.text_input(
+        "Lütfen Şifrenizi Girin", 
+        type="password", 
+        key="password_input", 
+        on_change=password_entered
+    )
+    return False
+
+def password_entered():
+    """Girilen şifreyi kontrol eder."""
+    # Secrets'tan şifreyi al ve kıyasla
+    if st.session_state["password_input"] == st.secrets["LOGIN_SIFRE"]:
+        st.session_state["password_correct"] = True
+        del st.session_state["password_input"]  # Şifreyi hafızadan sil (Güvenlik)
+    else:
+        st.session_state["password_correct"] = False
+        st.error("😕 Şifre Yanlış")
+
+# --- ANA PROGRAM BAŞLANGICI ---
+# Eğer şifre kontrolü False dönerse (yani giriş yapılmadıysa)
+# Uygulamanın geri kalanını DURDUR (st.stop)
+if not check_password():
+    st.stop()
+
+# BURADAN AŞAĞISI SENİN ESKİ KODLARIN DEVAM EDECEK...
+# (def get_gspread_client()... vs diye devam eden kısım)
 # --- GOOGLE SHEETS BAĞLANTISI ---
 def get_gspread_client():
     # Streamlit Secrets'tan bilgileri al
@@ -164,3 +198,4 @@ if not df.empty:
     st.dataframe(df_f, use_container_width=True)
 else:
     st.info("Veritabanı boş. İlk kaydını ekle!")
+
