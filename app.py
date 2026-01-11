@@ -1,17 +1,17 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import requests  # <-- YENİ EKLENEN
-# import yfinance as yf (Bunu silebilirsin veya kalabilir, artık kullanmıyoruz)
+import requests
+
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
 st.set_page_config(page_title="Akıllı Bütçe", layout="wide", page_icon="📈")
 
-# --- GİRİŞ KONTROLÜ ---
+# --- GİRİŞ KONTROLÜ (ŞİFRE) ---
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
@@ -56,7 +56,6 @@ def veri_kaydet(yeni_satir_df):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
-    # Tarih formatını string yap
     yeni_satir_df["Tarih"] = yeni_satir_df["Tarih"].astype(str)
     liste = yeni_satir_df.values.tolist()
     for row in liste:
@@ -68,22 +67,14 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# En tepeye bu kütüphaneyi eklediğinden emin ol (import kısımlarına):
-import requests 
-
-# En tepeye bu import'u eklediğinden emin ol:
-import requests 
-
 # --- ÖZELLİK 1: CANLI PİYASA VERİLERİ (3 AŞAMALI GÜVENLİK) ---
 def piyasa_verileri_getir():
     # 1. YÖNTEM: TRUNCGIL API (Türkiye Gerçek Piyasa)
     try:
         url = "https://finans.truncgil.com/today.json"
-        # Tarayıcı taklidi yapan başlıklar (Engel yememek için şart)
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        # verify=False, SSL sertifika hatalarını yok sayar (Bulut sunucular için gerekli olabilir)
         response = requests.get(url, headers=headers, timeout=10)
         
         if response.status_code == 200:
@@ -93,59 +84,54 @@ def piyasa_verileri_getir():
             gold = float(data['gram-altin']['satis'].replace(",", "."))
             return usd, eur, gold
     except:
-        pass # Sessizce 2. Yönteme geç
+        pass 
 
     # 2. YÖNTEM: GLOBAL API + TÜRKİYE MAKAS FARKI
     try:
-        # Dolar ve Euro'yu globalden çek
         r_usd = requests.get("https://api.frankfurter.app/latest?from=USD&to=TRY", timeout=5).json()
         usd = r_usd["rates"]["TRY"]
-        
         r_eur = requests.get("https://api.frankfurter.app/latest?from=EUR&to=TRY", timeout=5).json()
         eur = r_eur["rates"]["TRY"]
-        
-        # Altın Hesaplama (Senin verdiğin 6370 TL verisini baz alarak oranladım)
-        # Global altın düşük çıktığı için üzerine %70 civarı (Vergi+Makas+Fark) ekliyoruz ki gerçekçi olsun.
-        # Bu sadece internet yoksa geçici bir çözümdür.
         gold_ons = 2650 
         ham_gold = (gold_ons / 31.1035) * usd
-        gold = ham_gold * 1.75 # Türkiye piyasa düzeltmesi
-        
+        gold = ham_gold * 1.75 
         return usd, eur, gold
     except:
-        pass # Bu da çalışmazsa 3. Yönteme geç
+        pass 
 
-    # 3. YÖNTEM: HİÇBİRİ ÇALIŞMAZSA (Senin Güncel Verilerin)
-    # Uygulama hata verip kapanmasın diye bu değerleri döndürür.
+    # 3. YÖNTEM: HİÇBİRİ ÇALIŞMAZSA (Varsayılan)
     return 36.50, 38.20, 6370.00
+
+# --- ANA VERİYİ ÇEK (KRİTİK KISIM - SİLİNMİŞTİ BURASI) ---
+try:
+    df = veri_yukle()
+except Exception as e:
+    st.error(f"Google Sheets Bağlantı Hatası: {e}")
+    st.stop()
 
 # --- SOL MENÜ (SADE VE OTOMATİK) ---
 with st.sidebar:
     st.header("🌍 Canlı Piyasa")
     
-    # Verileri Çek (Fonksiyon yukarıda zaten tanımlı, direkt kullanıyoruz)
+    # Verileri Çek
     usd_val, eur_val, gold_val = piyasa_verileri_getir()
     
-    # Ekrana Yazdır (Sade Tasarım)
-    # Dolar ve Euro yan yana
+    # Ekrana Yazdır
     c1, c2 = st.columns(2)
     c1.metric("Dolar", f"{usd_val:.2f} ₺")
     c2.metric("Euro", f"{eur_val:.2f} ₺")
     
-    # Altın alt satırda tek başına
     st.metric("Gr Altın (24K)", f"{gold_val:,.2f} ₺")
-    
-    # Küçük bilgi notu (İstersen silebilirsin)
     st.caption("Veriler canlı güncellenmektedir.")
     
-    # Değerleri diğer hesaplamalar (Portföy vs) için hafızaya atıyoruz
+    # Değerleri hafızaya at
     st.session_state['piyasa_usd'] = usd_val
     st.session_state['piyasa_eur'] = eur_val
     st.session_state['piyasa_gold'] = gold_val
     
     st.divider()
     
-    # --- İŞLEM EKLEME BÖLÜMÜ (BURADAN SONRASI AYNEN DEVAM) ---
+    # --- İŞLEM EKLEME ---
     st.header("💸 İşlem Ekle")
     
     tarih_giris = st.date_input("Tarih", datetime.today())
@@ -167,7 +153,6 @@ with st.sidebar:
         kategoriler = ["Maaş", "Ek Gelir", "Prim", "Borç Alacak"]
     else: # YATIRIM
         kategoriler = ["Altın", "Gümüş", "Döviz", "Borsa", "Fon", "Bitcoin", "Bes"]
-        # Miktar bilgisini sadeleştirdik
         miktar = st.text_input("Miktar (Örn: 5 Gram)")
         if miktar: miktar_bilgisi = f"[{miktar}] "
 
@@ -262,3 +247,74 @@ with st.sidebar:
                 kayit_sil(silinecek_index)
                 st.success("Silindi!")
                 st.rerun()
+
+# --- DASHBOARD ---
+st.title("📊 Akıllı Bütçe Yönetimi")
+
+if not df.empty:
+    col_f1, col_f2 = st.columns(2)
+    yillar = sorted(df["Yıl"].unique().tolist(), reverse=True)
+    aylar = ["Tümü"] + list(df["Ay"].unique())
+    sec_yil = col_f1.selectbox("Yıl", yillar)
+    sec_ay = col_f2.selectbox("Ay", aylar)
+    
+    df_f = df[df["Yıl"] == sec_yil]
+    if sec_ay != "Tümü":
+        df_f = df_f[df_f["Ay"] == sec_ay]
+
+    top_gelir = df_f[df_f["Tur"] == "Gelir"]["Tutar"].sum()
+    top_gider = df_f[df_f["Tur"] == "Gider"]["Tutar"].sum()
+    top_yatirim = df_f[df_f["Tur"] == "Yatırım"]["Tutar"].sum()
+    kalan_nakit = top_gelir - (top_gider + top_yatirim)
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Toplam Gelir", f"{top_gelir:,.2f} ₺")
+    c2.metric("Giderler", f"{top_gider:,.2f} ₺", delta_color="inverse")
+    c3.metric("Yatırımlar", f"{top_yatirim:,.2f} ₺", delta_color="normal")
+    c4.metric("Kalan Nakit", f"{kalan_nakit:,.2f} ₺", delta=f"{kalan_nakit:,.2f} ₺")
+    
+    st.divider()
+    
+    tab1, tab2 = st.tabs(["📉 Gider ve Yatırım Analizi", "💰 Portföy Detayı"])
+    
+    with tab1:
+        g1, g2 = st.columns(2)
+        with g1:
+            st.subheader("Para Çıkış Dağılımı")
+            df_pie = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
+            if not df_pie.empty:
+                fig = px.pie(df_pie, values="Tutar", names="Kategori", hole=0.4, title="Harcama ve Yatırımlar")
+                fig.update_traces(textinfo='percent+label', texttemplate='%{label}<br>%{value:,.0f} ₺')
+                st.plotly_chart(fig, use_container_width=True)
+        with g2:
+            st.subheader("Gelir vs Gider vs Yatırım")
+            ozet_data = pd.DataFrame({"Tip": ["Gelir", "Gider", "Yatırım"], "Tutar": [top_gelir, top_gider, top_yatirim]})
+            fig2 = px.bar(ozet_data, x="Tip", y="Tutar", color="Tip", text="Tutar",
+                          color_discrete_map={"Gelir": "#00CC96", "Gider": "#EF553B", "Yatırım": "#636EFA"})
+            fig2.update_traces(texttemplate='%{text:,.0f} ₺', textposition='outside')
+            st.plotly_chart(fig2, use_container_width=True)
+
+    with tab2:
+        st.subheader("Yatırım Portföyüm")
+        df_y = df_f[df_f["Tur"] == "Yatırım"]
+        if not df_y.empty:
+            col_y1, col_y2 = st.columns([2, 1])
+            with col_y1:
+                fig_y = px.sunburst(df_y, path=['Kategori', 'Aciklama'], values='Tutar')
+                fig_y.update_traces(hovertemplate='<b>%{label}</b><br>Tutar: %{value:,.0f} ₺')
+                st.plotly_chart(fig_y, use_container_width=True)
+            with col_y2:
+                df_show = df_y[["Tarih", "Aciklama", "Tutar"]].copy()
+                df_show["Tutar"] = df_show["Tutar"].apply(lambda x: f"{x:,.2f} ₺")
+                st.dataframe(df_show, hide_index=True)
+        else:
+            st.warning("Yatırım kaydı yok.")
+
+    st.divider()
+    st.subheader("📋 Tüm İşlemler")
+    df_all = df_f.sort_values(by="Tarih", ascending=False).copy()
+    df_all["Tutar"] = df_all["Tutar"].apply(lambda x: f"{x:,.2f} ₺")
+    st.dataframe(df_all, use_container_width=True)
+
+else:
+    st.info("Veritabanı boş.")
