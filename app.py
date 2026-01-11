@@ -6,7 +6,9 @@ from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import requests
-import xml.etree.ElementTree as ET # TCMB XML okumak için
+from bs4 import BeautifulSoup
+import random
+import time
 
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -66,36 +68,74 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# --- GARANTİLİ VERİ (TCMB + MAKAS FARKI) ---
-def tcmb_verisi_getir():
-    try:
-        # Türkiye Cumhuriyet Merkez Bankası Resmi Kurları (Asla Engellenmez)
-        url = "https://www.tcmb.gov.tr/kurlar/today.xml"
-        response = requests.get(url, timeout=5)
-        
-        root = ET.fromstring(response.content)
-        
-        usd = 0.0
-        eur = 0.0
-        
-        # XML içinden Dolar ve Euro'yu bul
-        for currency in root.findall('Currency'):
-            code = currency.get('Kod')
-            if code == "USD":
-                usd = float(currency.find('BanknoteSelling').text) # Efektif Satış
-            elif code == "EUR":
-                eur = float(currency.find('BanknoteSelling').text)
-        
-        # Altın Hesabı (TCMB'de altın yok, Dolar üzerinden hesaplanır)
-        # Ons Fiyatı (Sabit ortalama veya global API'den alınabilir, TCMB garanti olduğu için buraya sabit güncel ons koyuyoruz)
-        ons_fiyat = 2660 # Güncel Ons (Bunu koddan değiştirebiliriz)
-        
-        # Has Altın Fiyatı = (Ons / 31.1035) * Dolar
-        has_altin = (ons_fiyat / 31.1035) * usd
-        
-        return usd, eur, has_altin
+# --- ANA KAYNAK: HAREMALTIN.COM ---
+def harem_verisi_getir():
+    # Tarayıcı taklidi yapıyoruz (User-Agent)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+    }
     
+    usd, eur, gold = 0, 0, 0
+    
+    try:
+        # Harem Altın Ana Sayfası
+        # v=random ekleyerek her seferinde yeni sayfa istiyoruz
+        url = f"https://www.haremaltin.com/?v={int(time.time())}"
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Harem'in tablosundaki satırları bul
+        # Genelde 'tr' etiketleri içinde 'td'lerde veri olur.
+        rows = soup.find_all("tr")
+        
+        for row in rows:
+            text = row.get_text().upper()
+            cols = row.find_all("td")
+            
+            # En az 3 sütun olmalı (İsim, Alış, Satış)
+            if len(cols) < 3:
+                continue
+            
+            # SATIŞ FİYATI GENELDE SON SÜTUNLARDADIR
+            # Sitedeki yapıya göre genelde: İsim | Alış | Satış | Değişim
+            # Biz "Satış"ı alacağız (cols[2] veya cols[3] olabilir, dinamik bakalım)
+            
+            # Temizleme fonksiyonu
+            def temizle(val):
+                return float(val.replace(".", "").replace(",", "."))
+
+            # --- HAS ALTIN (GRAM ALTIN) ---
+            if "HAS ALTIN" in text or "GRAM ALTIN" in text:
+                try:
+                    # Satış fiyatını bulmaya çalışalım (Genelde 3. sütun index 2'dir)
+                    fiyat_text = cols[2].text.strip()
+                    gold = temizle(fiyat_text)
+                except:
+                    pass
+
+            # --- AMERİKAN DOLARI (USD) ---
+            if "ABD DOLARI" in text or "USD/TRY" in text:
+                try:
+                    fiyat_text = cols[2].text.strip()
+                    usd = temizle(fiyat_text)
+                except:
+                    pass
+
+            # --- EURO (EUR) ---
+            if "EURO" in text or "EUR/TRY" in text:
+                try:
+                    fiyat_text = cols[2].text.strip()
+                    eur = temizle(fiyat_text)
+                except:
+                    pass
+                    
+        return usd, eur, gold
+
     except Exception as e:
+        print(f"Harem Veri Hatası: {e}")
         return 0, 0, 0
 
 # --- ANA VERİYİ ÇEK ---
@@ -105,36 +145,36 @@ except Exception as e:
     st.error(f"Google Sheets Bağlantı Hatası: {e}")
     st.stop()
 
-# --- SOL MENÜ (PİYASA PANELİ) ---
+# --- SOL MENÜ ---
 with st.sidebar:
-    st.header("🌍 Piyasa Ayarları")
+    st.header("🌍 Canlı Piyasa (Harem)")
     
-    # 1. TCMB Verisini Çek
-    resmi_usd, resmi_eur, resmi_gold = tcmb_verisi_getir()
+    if st.button("🔄 Piyasayı Güncelle"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # Verileri Çek
+    usd_val, eur_val, gold_val = harem_verisi_getir()
     
-    # 2. Makas Ayarı (Kullanıcı Harem Fiyatına Yaklaştırabilsin Diye)
-    st.caption("Fiziki piyasa (Harem), Merkez Bankası'ndan yüksektir. Aşağıdaki çubuğu kaydırarak fiyatı kuyumcuyla eşitleyebilirsin.")
-    
-    # Varsayılan %4 fark (1.04) genelde Harem'i tutturur
-    makas_orani = st.slider("Serbest Piyasa Farkı (%)", 0.0, 10.0, 4.0, 0.5)
-    carpan = 1 + (makas_orani / 100)
-    
-    # 3. Nihai Fiyatlar
-    guncel_usd = resmi_usd * carpan
-    guncel_eur = resmi_eur * carpan
-    guncel_gold = resmi_gold * carpan # 24 Ayar
-    
-    # Session'a kaydet (Hesaplamalar için)
-    st.session_state['piyasa_usd'] = guncel_usd
-    st.session_state['piyasa_eur'] = guncel_eur
-    st.session_state['piyasa_gold'] = guncel_gold
+    # Eğer siteden veri çekilemezse (0 dönerse), en son başarılı veriyi kullan
+    if usd_val == 0:
+        usd_val = st.session_state.get('piyasa_usd', 36.50)
+        eur_val = st.session_state.get('piyasa_eur', 38.50)
+        gold_val = st.session_state.get('piyasa_gold', 6400.00)
+        st.warning("⚠️ HaremAltin.com yanıt vermedi, eski veri gösteriliyor.")
+    else:
+        # Başarılıysa session'a kaydet
+        st.session_state['piyasa_usd'] = usd_val
+        st.session_state['piyasa_eur'] = eur_val
+        st.session_state['piyasa_gold'] = gold_val
 
     # Ekrana Yazdır
     c1, c2 = st.columns(2)
-    c1.metric("Dolar", f"{guncel_usd:.2f} ₺")
-    c2.metric("Euro", f"{guncel_eur:.2f} ₺")
-    st.metric("Gr Altın (24K)", f"{guncel_gold:,.2f} ₺", help="Has Altın Fiyatıdır")
+    c1.metric("Dolar", f"{usd_val:.2f} ₺")
+    c2.metric("Euro", f"{eur_val:.2f} ₺")
+    st.metric("Has Altın (Harem)", f"{gold_val:,.2f} ₺")
     
+    st.caption(f"Kaynak: HaremAltin.com")
     st.divider()
     
     # --- İŞLEM EKLEME ---
