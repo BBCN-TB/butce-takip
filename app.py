@@ -248,10 +248,11 @@ with st.sidebar:
                 st.success("Silindi!")
                 st.rerun()
 
-# --- DASHBOARD ---
+# --- DASHBOARD (AKILLI KAR/ZARAR HESAPLAMALI) ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
+    # --- FİLTRELEME ---
     col_f1, col_f2 = st.columns(2)
     yillar = sorted(df["Yıl"].unique().tolist(), reverse=True)
     aylar = ["Tümü"] + list(df["Ay"].unique())
@@ -262,20 +263,23 @@ if not df.empty:
     if sec_ay != "Tümü":
         df_f = df_f[df_f["Ay"] == sec_ay]
 
+    # --- TEMEL METRİKLER ---
     top_gelir = df_f[df_f["Tur"] == "Gelir"]["Tutar"].sum()
     top_gider = df_f[df_f["Tur"] == "Gider"]["Tutar"].sum()
-    top_yatirim = df_f[df_f["Tur"] == "Yatırım"]["Tutar"].sum()
-    kalan_nakit = top_gelir - (top_gider + top_yatirim)
+    top_yatirim_maliyet = df_f[df_f["Tur"] == "Yatırım"]["Tutar"].sum()
+    kalan_nakit = top_gelir - (top_gider + top_yatirim_maliyet)
     
+    # --- ÜST KARTLAR ---
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Toplam Gelir", f"{top_gelir:,.2f} ₺")
     c2.metric("Giderler", f"{top_gider:,.2f} ₺", delta_color="inverse")
-    c3.metric("Yatırımlar", f"{top_yatirim:,.2f} ₺", delta_color="normal")
+    c3.metric("Yatırım (Maliyet)", f"{top_yatirim_maliyet:,.2f} ₺", help="Cebinden çıkan nakit para")
     c4.metric("Kalan Nakit", f"{kalan_nakit:,.2f} ₺", delta=f"{kalan_nakit:,.2f} ₺")
     
     st.divider()
     
-    tab1, tab2 = st.tabs(["📉 Gider ve Yatırım Analizi", "💰 Portföy Detayı"])
+    # --- SEKMELER ---
+    tab1, tab2 = st.tabs(["📉 Gider Analizi", "💰 Portföy Kâr/Zarar"])
     
     with tab1:
         g1, g2 = st.columns(2)
@@ -283,33 +287,100 @@ if not df.empty:
             st.subheader("Para Çıkış Dağılımı")
             df_pie = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
             if not df_pie.empty:
-                fig = px.pie(df_pie, values="Tutar", names="Kategori", hole=0.4, title="Harcama ve Yatırımlar")
+                fig = px.pie(df_pie, values="Tutar", names="Kategori", hole=0.4)
                 fig.update_traces(textinfo='percent+label', texttemplate='%{label}<br>%{value:,.0f} ₺')
                 st.plotly_chart(fig, use_container_width=True)
         with g2:
-            st.subheader("Gelir vs Gider vs Yatırım")
-            ozet_data = pd.DataFrame({"Tip": ["Gelir", "Gider", "Yatırım"], "Tutar": [top_gelir, top_gider, top_yatirim]})
+            st.subheader("Bütçe Dengesi")
+            ozet_data = pd.DataFrame({"Tip": ["Gelir", "Gider", "Yatırım"], "Tutar": [top_gelir, top_gider, top_yatirim_maliyet]})
             fig2 = px.bar(ozet_data, x="Tip", y="Tutar", color="Tip", text="Tutar",
                           color_discrete_map={"Gelir": "#00CC96", "Gider": "#EF553B", "Yatırım": "#636EFA"})
             fig2.update_traces(texttemplate='%{text:,.0f} ₺', textposition='outside')
             st.plotly_chart(fig2, use_container_width=True)
 
+    # --- KRİTİK BÖLÜM: OTOMATİK KAR/ZARAR HESAPLAMA ---
     with tab2:
-        st.subheader("Yatırım Portföyüm")
-        df_y = df_f[df_f["Tur"] == "Yatırım"]
+        st.subheader("Yatırım Portföyüm ve Canlı Durum")
+        
+        # Sadece Yatırım verilerini al
+        df_y = df[df["Tur"] == "Yatırım"].copy() # Tüm zamanları alıyoruz ki toplam birikimi görelim
+        
         if not df_y.empty:
-            col_y1, col_y2 = st.columns([2, 1])
-            with col_y1:
-                fig_y = px.sunburst(df_y, path=['Kategori', 'Aciklama'], values='Tutar')
-                fig_y.update_traces(hovertemplate='<b>%{label}</b><br>Tutar: %{value:,.0f} ₺')
-                st.plotly_chart(fig_y, use_container_width=True)
-            with col_y2:
-                df_show = df_y[["Tarih", "Aciklama", "Tutar"]].copy()
-                df_show["Tutar"] = df_show["Tutar"].apply(lambda x: f"{x:,.2f} ₺")
-                st.dataframe(df_show, hide_index=True)
-        else:
-            st.warning("Yatırım kaydı yok.")
+            # Session State'den piyasa verilerini al (Sidebar'da çekmiştik)
+            guncel_usd = st.session_state.get('piyasa_usd', 0)
+            guncel_eur = st.session_state.get('piyasa_eur', 0)
+            guncel_gold = st.session_state.get('piyasa_gold', 0)
+            
+            # Hesaplama Fonksiyonu
+            def guncel_deger_hesapla(row):
+                kategori = str(row["Kategori"]).lower()
+                aciklama = str(row["Aciklama"])
+                
+                # Açıklamanın içindeki [5] veya [10.5] gibi sayıları bul
+                import re
+                match = re.search(r'\[([\d\.,]+)', aciklama)
+                
+                if match:
+                    # Miktarı sayıya çevir (Virgül nokta karışıklığını çöz)
+                    miktar_str = match.group(1).replace(",", ".")
+                    try:
+                        miktar = float(miktar_str)
+                    except:
+                        return 0 # Sayı okunamadıysa 0 dön
+                    
+                    # Fiyatla çarp
+                    if "altın" in kategori:
+                        return miktar * guncel_gold
+                    elif "dolar" in kategori or "döviz" in kategori:
+                        # Eğer açıklamada Euro geçiyorsa Euro ile çarp, yoksa Dolar
+                        if "euro" in aciklama.lower():
+                            return miktar * guncel_eur
+                        return miktar * guncel_usd
+                    elif "euro" in kategori:
+                        return miktar * guncel_eur
+                    else:
+                        # Borsa, Fon vb. için canlı veri şu an yok, maliyeti göster
+                        return row["Tutar"]
+                else:
+                    # Miktar yazılmamışsa (eski kayıtlar), maliyeti güncel değer varsay
+                    return row["Tutar"]
 
+            # Her satır için güncel değeri hesapla
+            df_y["Güncel Değer (₺)"] = df_y.apply(guncel_deger_hesapla, axis=1)
+            df_y["Fark (₺)"] = df_y["Güncel Değer (₺)"] - df_y["Tutar"]
+            
+            # --- TOPLAM PORTFÖY ÖZETİ ---
+            toplam_maliyet = df_y["Tutar"].sum()
+            toplam_guncel = df_y["Güncel Değer (₺)"].sum()
+            toplam_fark = toplam_guncel - toplam_maliyet
+            
+            # Renkli Kartlar
+            k1, k2, k3 = st.columns(3)
+            k1.metric("Toplam Yatırım Maliyeti", f"{toplam_maliyet:,.2f} ₺")
+            k2.metric("Şu Anki Piyasa Değeri", f"{toplam_guncel:,.2f} ₺")
+            k3.metric("Net Kâr/Zarar", f"{toplam_fark:,.2f} ₺", delta=f"{toplam_fark:,.2f} ₺")
+            
+            st.divider()
+            
+            # Detaylı Tablo
+            st.write("📋 **Varlık Bazlı Detaylar**")
+            # Sadece önemli sütunları göster
+            df_goster = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel Değer (₺)", "Fark (₺)"]].sort_values(by="Tarih", ascending=False)
+            
+            # Formatlama (₺ ekle)
+            st.dataframe(
+                df_goster.style.format({
+                    "Tutar": "{:,.2f} ₺",
+                    "Güncel Değer (₺)": "{:,.2f} ₺",
+                    "Fark (₺)": "{:,.2f} ₺"
+                }).applymap(lambda v: 'color: red;' if v < 0 else 'color: green;', subset=['Fark (₺)']),
+                use_container_width=True
+            )
+            
+        else:
+            st.info("Henüz portföyünde yatırım yok.")
+
+    # --- LİSTE ---
     st.divider()
     st.subheader("📋 Tüm İşlemler")
     df_all = df_f.sort_values(by="Tarih", ascending=False).copy()
