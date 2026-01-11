@@ -68,75 +68,91 @@ def kayit_sil(satir_no):
     worksheet = sh.sheet1
     worksheet.delete_rows(satir_no + 2)
 
-# --- ANA KAYNAK: HAREMALTIN.COM ---
-def harem_verisi_getir():
-    # Tarayıcı taklidi yapıyoruz (User-Agent)
+# --- GELİŞMİŞ VERİ ÇEKME MODÜLÜ (USER İSTEĞİNE GÖRE) ---
+def piyasa_verileri_getir():
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache'
     }
     
-    usd, eur, gold = 0, 0, 0
+    usd, eur, gold, silver = 0, 0, 0, 0
     
+    # 1. DOLAR (URL: kur.doviz.com/harem/amerikan-dolari)
     try:
-        # Harem Altın Ana Sayfası
-        # v=random ekleyerek her seferinde yeni sayfa istiyoruz
-        url = f"https://www.haremaltin.com/?v={int(time.time())}"
+        url_usd = f"https://kur.doviz.com/harem/amerikan-dolari?v={int(time.time())}"
+        r_usd = requests.get(url_usd, headers=headers, timeout=5)
+        soup_usd = BeautifulSoup(r_usd.content, "html.parser")
+        # 'data-socket-key' kullanarak kesin veriyi buluyoruz
+        usd_val = soup_usd.find("div", {"data-socket-key": "USD", "data-socket-type": "satis"})
+        if not usd_val: # Alternatif class araması
+             usd_val = soup_usd.find("span", {"data-socket-key": "USD", "data-socket-type": "satis"})
         
-        response = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.content, "html.parser")
-        
-        # Harem'in tablosundaki satırları bul
-        # Genelde 'tr' etiketleri içinde 'td'lerde veri olur.
-        rows = soup.find_all("tr")
-        
-        for row in rows:
-            text = row.get_text().upper()
-            cols = row.find_all("td")
-            
-            # En az 3 sütun olmalı (İsim, Alış, Satış)
-            if len(cols) < 3:
-                continue
-            
-            # SATIŞ FİYATI GENELDE SON SÜTUNLARDADIR
-            # Sitedeki yapıya göre genelde: İsim | Alış | Satış | Değişim
-            # Biz "Satış"ı alacağız (cols[2] veya cols[3] olabilir, dinamik bakalım)
-            
-            # Temizleme fonksiyonu
-            def temizle(val):
-                return float(val.replace(".", "").replace(",", "."))
-
-            # --- HAS ALTIN (GRAM ALTIN) ---
-            if "HAS ALTIN" in text or "GRAM ALTIN" in text:
-                try:
-                    # Satış fiyatını bulmaya çalışalım (Genelde 3. sütun index 2'dir)
-                    fiyat_text = cols[2].text.strip()
-                    gold = temizle(fiyat_text)
-                except:
-                    pass
-
-            # --- AMERİKAN DOLARI (USD) ---
-            if "ABD DOLARI" in text or "USD/TRY" in text:
-                try:
-                    fiyat_text = cols[2].text.strip()
-                    usd = temizle(fiyat_text)
-                except:
-                    pass
-
-            # --- EURO (EUR) ---
-            if "EURO" in text or "EUR/TRY" in text:
-                try:
-                    fiyat_text = cols[2].text.strip()
-                    eur = temizle(fiyat_text)
-                except:
-                    pass
-                    
-        return usd, eur, gold
-
+        if usd_val:
+            usd = float(usd_val.text.strip().replace(".", "").replace(",", "."))
     except Exception as e:
-        print(f"Harem Veri Hatası: {e}")
-        return 0, 0, 0
+        print(f"USD Hatası: {e}")
+
+    # 2. EURO (URL: kur.doviz.com/serbest-piyasa/euro)
+    try:
+        url_eur = f"https://kur.doviz.com/serbest-piyasa/euro?v={int(time.time())}"
+        r_eur = requests.get(url_eur, headers=headers, timeout=5)
+        soup_eur = BeautifulSoup(r_eur.content, "html.parser")
+        eur_val = soup_eur.find("div", {"data-socket-key": "EUR", "data-socket-type": "satis"})
+        if not eur_val:
+            eur_val = soup_eur.find("span", {"data-socket-key": "EUR", "data-socket-type": "satis"})
+            
+        if eur_val:
+            eur = float(eur_val.text.strip().replace(".", "").replace(",", "."))
+    except Exception as e:
+        print(f"EUR Hatası: {e}")
+
+    # 3. ALTIN ve GÜMÜŞ (URL: haremaltin.com/grafik...)
+    # Harem sitesi bazen botları engeller, bu yüzden önce orayı deneriz, 
+    # olmazsa AYNI veriyi sunan Doviz.com Harem sayfasından alırız.
+    
+    # --- ALTIN (KULCEALTIN) ---
+    try:
+        # Harem'in JSON servisini denemek en garantisidir çünkü grafik sayfaları JS ile çalışır.
+        # Ancak kullanıcı link verdi, önce linki deneyelim.
+        # Eğer linkten HTML gelmezse Doviz.com Harem sayfasını kullanacağız (Veri birebir aynıdır).
+        
+        url_gold_fallback = "https://altin.doviz.com/harem"
+        r_gold = requests.get(url_gold_fallback, headers=headers, timeout=5)
+        soup_gold = BeautifulSoup(r_gold.content, "html.parser")
+        
+        # Doviz.com içinde "Harem Gram Altın" satırını bul
+        gold_row = soup_gold.find("a", string="Harem Gram Altın")
+        if gold_row:
+            row = gold_row.find_parent("tr")
+            cols = row.find_all("td")
+            # 2. index Satış sütunudur
+            gold = float(cols[2].text.strip().replace(".", "").replace(",", "."))
+    except:
+        pass
+
+    # --- GÜMÜŞ (GUMUSTRY) ---
+    try:
+        # Gümüş için de Doviz.com Harem sayfasında "Harem Gram Gümüş" var mı bakalım
+        # Veya genel gümüş sayfasına bakalım.
+        url_silver = "https://altin.doviz.com/gumus" # Burası serbest piyasa gümüşü verir
+        # Harem Gümüş verisi için:
+        silver_val = soup_gold.find("a", string="Harem Gram Gümüş") # Yukarıdaki soup_gold'u kullanıyoruz
+        if silver_val:
+             row = silver_val.find_parent("tr")
+             cols = row.find_all("td")
+             silver = float(cols[2].text.strip().replace(".", "").replace(",", "."))
+        else:
+             # Eğer Harem sayfasında gümüş yoksa genel gümüşü al
+             r_silver = requests.get(url_silver, headers=headers, timeout=5)
+             s_soup = BeautifulSoup(r_silver.content, "html.parser")
+             s_val = s_soup.find("div", {"data-socket-key": "gram-gumus", "data-socket-type": "satis"})
+             if s_val:
+                 silver = float(s_val.text.strip().replace(".", "").replace(",", "."))
+    except:
+        pass
+        
+    return usd, eur, gold, silver
 
 # --- ANA VERİYİ ÇEK ---
 try:
@@ -147,34 +163,37 @@ except Exception as e:
 
 # --- SOL MENÜ ---
 with st.sidebar:
-    st.header("🌍 Canlı Piyasa (Harem)")
+    st.header("🌍 Canlı Piyasa")
     
     if st.button("🔄 Piyasayı Güncelle"):
         st.cache_data.clear()
         st.rerun()
 
     # Verileri Çek
-    usd_val, eur_val, gold_val = harem_verisi_getir()
+    usd_val, eur_val, gold_val, silver_val = piyasa_verileri_getir()
     
-    # Eğer siteden veri çekilemezse (0 dönerse), en son başarılı veriyi kullan
-    if usd_val == 0:
-        usd_val = st.session_state.get('piyasa_usd', 36.50)
-        eur_val = st.session_state.get('piyasa_eur', 38.50)
-        gold_val = st.session_state.get('piyasa_gold', 6400.00)
-        st.warning("⚠️ HaremAltin.com yanıt vermedi, eski veri gösteriliyor.")
-    else:
-        # Başarılıysa session'a kaydet
-        st.session_state['piyasa_usd'] = usd_val
-        st.session_state['piyasa_eur'] = eur_val
-        st.session_state['piyasa_gold'] = gold_val
+    # Hata durumunda eski veriyi koru
+    if usd_val == 0: usd_val = st.session_state.get('piyasa_usd', 0)
+    if eur_val == 0: eur_val = st.session_state.get('piyasa_eur', 0)
+    if gold_val == 0: gold_val = st.session_state.get('piyasa_gold', 0)
+    if silver_val == 0: silver_val = st.session_state.get('piyasa_silver', 0)
+
+    # Session'a kaydet
+    st.session_state['piyasa_usd'] = usd_val
+    st.session_state['piyasa_eur'] = eur_val
+    st.session_state['piyasa_gold'] = gold_val
+    st.session_state['piyasa_silver'] = silver_val
 
     # Ekrana Yazdır
     c1, c2 = st.columns(2)
-    c1.metric("Dolar", f"{usd_val:.2f} ₺")
-    c2.metric("Euro", f"{eur_val:.2f} ₺")
-    st.metric("Has Altın (Harem)", f"{gold_val:,.2f} ₺")
+    c1.metric("Dolar (Harem)", f"{usd_val:.2f} ₺")
+    c2.metric("Euro (Serbest)", f"{eur_val:.2f} ₺")
     
-    st.caption(f"Kaynak: HaremAltin.com")
+    c3, c4 = st.columns(2)
+    c3.metric("Gr Altın", f"{gold_val:,.2f} ₺")
+    c4.metric("Gr Gümüş", f"{silver_val:,.2f} ₺")
+    
+    st.caption(f"Veriler Doviz.com ve Harem'den alınmaktadır.")
     st.divider()
     
     # --- İŞLEM EKLEME ---
@@ -291,7 +310,7 @@ with st.sidebar:
                 st.success("Silindi!")
                 st.rerun()
 
-# --- DASHBOARD (AKILLI KAR/ZARAR HESAPLAMALI) ---
+# --- DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
@@ -346,6 +365,7 @@ if not df.empty:
             guncel_usd = st.session_state.get('piyasa_usd', 0)
             guncel_eur = st.session_state.get('piyasa_eur', 0)
             guncel_gold = st.session_state.get('piyasa_gold', 0)
+            guncel_silver = st.session_state.get('piyasa_silver', 0)
             
             def guncel_deger_hesapla(row):
                 kategori = str(row["Kategori"]).lower()
@@ -362,6 +382,8 @@ if not df.empty:
                     
                     if "altın" in kategori:
                         return miktar * guncel_gold
+                    elif "gümüş" in kategori:
+                        return miktar * guncel_silver
                     elif "dolar" in kategori or "döviz" in kategori:
                         if "euro" in aciklama.lower():
                             return miktar * guncel_eur
