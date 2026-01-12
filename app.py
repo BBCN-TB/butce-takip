@@ -5,6 +5,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import re # Taksitleri tespit etmek için Regex kütüphanesi
 
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -58,11 +59,36 @@ def veri_kaydet(yeni_satir_df):
     for row in liste:
         worksheet.append_row(row)
 
-def kayit_sil(satir_no):
+# --- GELİŞMİŞ SİLME FONKSİYONU (Çoklu Silme Destekli) ---
+def toplu_sil(silinecek_indexler):
+    """
+    Belirtilen index listesindeki tüm kayıtları siler.
+    Google Sheets'te satır kayması olmaması için;
+    Tüm veriyi okur, pandas'ta siler, sayfayı temizler ve tekrar yazar.
+    Bu yöntem toplu silme için en güvenlisidir.
+    """
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
-    worksheet.delete_rows(satir_no + 2)
+    
+    # Mevcut veriyi al
+    data = worksheet.get_all_records()
+    df_mevcut = pd.DataFrame(data)
+    
+    # Indexlere göre sil (Pandas indexleri ile eşleşmeli)
+    df_yeni = df_mevcut.drop(index=silinecek_indexler)
+    
+    # Sayfayı temizle
+    worksheet.clear()
+    
+    # Başlıkları geri yaz
+    worksheet.append_row(df_mevcut.columns.tolist())
+    
+    # Kalan verileri yaz
+    if not df_yeni.empty:
+        # Tarih formatını string yapmayalım, gspread halleder ama garanti olsun
+        values = df_yeni.astype(str).values.tolist()
+        worksheet.append_rows(values)
 
 # --- ANA VERİYİ ÇEK ---
 try:
@@ -71,19 +97,17 @@ except Exception as e:
     st.error(f"Google Sheets Bağlantı Hatası: {e}")
     st.stop()
 
-# --- SOL MENÜ (SADELEŞTİRİLMİŞ MANUEL GİRİŞ) ---
+# --- SOL MENÜ (MANUEL PİYASA) ---
 with st.sidebar:
     st.header("🌍 Piyasa Fiyatları (Manuel)")
     st.info("Altın ve Gümüş fiyatlarını buradan güncelleyebilirsin.")
     
-    # Sadece Altın ve Gümüş Girişi
     gold_val = st.number_input("Gr Altın (₺)", value=6400.00, step=10.0, format="%.2f")
     silver_val = st.number_input("Gr Gümüş (₺)", value=80.00, step=1.0, format="%.2f")
     
-    # Session'a kaydet (Hesaplamalar için)
+    # Session'a kaydet
     st.session_state['piyasa_gold'] = gold_val
     st.session_state['piyasa_silver'] = silver_val
-    # Dolar ve Euro kaldırıldığı için hesaplamalarda hata vermesin diye 0 atıyoruz
     st.session_state['piyasa_usd'] = 0
     st.session_state['piyasa_eur'] = 0
 
@@ -190,18 +214,59 @@ with st.sidebar:
                 else:
                     st.warning("Geçen ay uygun sabit gider bulunamadı.")
 
-    # SİLME BÖLÜMÜ
+    # --- GELİŞMİŞ SİLME BÖLÜMÜ (AKILLI TAKSİT TESPİTİ) ---
     st.divider()
     if not df.empty:
-        with st.expander("🗑️ Kayıt Sil"):
+        with st.expander("🗑️ Kayıt Sil (Akıllı)"):
+            st.info("Bir taksiti seçerseniz, sistem o taksit grubunun tamamını silmeyi teklif eder.")
             df_gosterim = df.reset_index().sort_index(ascending=False)
-            secenekler = df_gosterim.apply(lambda x: f"NO: {x['index']} | {x['Tur']} | {x['Kategori']} | {x['Tutar']:,.2f} ₺", axis=1)
+            
+            # Seçeneklerde Açıklama da görünsün ki taksit olduğu anlaşılsın
+            secenekler = df_gosterim.apply(lambda x: f"NO: {x['index']} | {x['Tarih']} | {x['Aciklama']} | {x['Tutar']:,.2f} ₺", axis=1)
             sil_secim = st.selectbox("Silinecek Kayıt:", secenekler)
-            if st.button("Seçiliyi Sil"):
-                silinecek_index = int(sil_secim.split("|")[0].replace("NO:", "").strip())
-                kayit_sil(silinecek_index)
-                st.success("Silindi!")
-                st.rerun()
+            
+            if sil_secim:
+                # Seçilen indexi bul
+                secilen_index = int(sil_secim.split("|")[0].replace("NO:", "").strip())
+                
+                # Seçilen satırın detaylarını al
+                secilen_satir = df.loc[secilen_index]
+                aciklama = secilen_satir["Aciklama"]
+                tutar = secilen_satir["Tutar"]
+                
+                # Taksit kontrolü yap (Regex ile)
+                # Örnek Format: "iPhone 15 (1/12. Taksit)" -> Gruplar: ("iPhone 15", "1", "12")
+                match = re.search(r"(.*?) \((\d+)/(\d+)\. Taksit\)", str(aciklama))
+                
+                silinecek_liste = [secilen_index]
+                buton_metni = "Sadece Bu Kaydı Sil"
+                is_toplu = False
+                
+                if match:
+                    urun_adi = match.group(1) # Örn: iPhone 15
+                    toplam_taksit = match.group(3) # Örn: 12
+                    
+                    # Aynı ürün adına ve aynı toplam taksit sayısına sahip diğerlerini bul
+                    benzerler = df[
+                        (df["Aciklama"].str.contains(re.escape(urun_adi), na=False)) & 
+                        (df["Aciklama"].str.contains(f"/{toplam_taksit}. Taksit", na=False)) &
+                        (df["Tutar"] == tutar) # Tutarı da kontrol et yanlışlık olmasın
+                    ]
+                    
+                    if not benzerler.empty:
+                        silinecek_liste = benzerler.index.tolist()
+                        is_toplu = True
+                        st.warning(f"⚠️ Bu bir taksitli işlem! ({urun_adi})")
+                        st.write(f"Bu gruba ait toplam **{len(silinecek_liste)}** adet taksit bulundu.")
+                        buton_metni = f"🔴 Tüm Taksit Grubunu Sil ({len(silinecek_liste)} Kayıt)"
+                
+                if st.button(buton_metni):
+                    with st.spinner('Kayıtlar veritabanından siliniyor...'):
+                        toplu_sil(silinecek_liste)
+                    
+                    msg = "Tüm taksitler başarıyla silindi!" if is_toplu else "Kayıt silindi!"
+                    st.success(msg)
+                    st.rerun()
 
 # --- DASHBOARD (AKILLI KAR/ZARAR HESAPLAMALI) ---
 st.title("📊 Akıllı Bütçe Yönetimi")
