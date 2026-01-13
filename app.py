@@ -39,62 +39,48 @@ def get_gspread_client():
     client = gspread.authorize(creds)
     return client
 
-# --- YENİ VERİ YÜKLEME (GARANTİLİ YÖNTEM) ---
+# --- VERİ YÜKLEME ---
 def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
     
-    # get_all_records yerine get_all_values kullanıyoruz.
-    # Bu sayede veriler ham string (metin) olarak gelir, Pandas yorum katamaz.
+    # Tüm verileri string olarak çekip kendimiz işliyoruz (En garantisi)
     tum_veriler = worksheet.get_all_values()
     
     if not tum_veriler or len(tum_veriler) < 2:
         return pd.DataFrame(columns=["Tarih", "Ay", "Yıl", "Kategori", "Aciklama", "Tutar", "Tur"])
     
-    # İlk satırı başlık yap
     header = tum_veriler[0]
     rows = tum_veriler[1:]
     
     df = pd.DataFrame(rows, columns=header)
     
-    # TEMİZLEME FONKSİYONU (HATA ÖNLEYİCİ)
-    def temizle(x):
-        try:
-            # Önce metne çevir ve boşlukları/sembolleri at
-            x_str = str(x).strip().replace("₺", "").replace("TL", "").strip()
-            
-            # Eğer boşsa 0 dön
-            if not x_str:
-                return 0.0
-            
-            # Eğer veri zaten "1963,33" gibiyse (Virgül var)
-            if "," in x_str:
-                # Noktaları (binlik) sil: 1.000,50 -> 1000,50
-                x_str = x_str.replace(".", "")
-                # Virgülü noktaya çevir: 1000,50 -> 1000.50
-                x_str = x_str.replace(",", ".")
-                return float(x_str)
-            
-            # Eğer veri "1963.33" gibiyse (Sadece nokta var)
-            elif "." in x_str:
-                # Burası kritik: Eğer noktadan sonra 1 veya 2 basamak varsa ondalıktır.
-                # Örn: 1963.33 -> Sayıdır.
-                # Örn: 1.000 -> Binliktir.
-                # Ama riske girmemek için Python mantığıyla direkt çevirmeyi deneriz.
-                try:
-                    return float(x_str)
-                except:
-                    # Çevrilemiyorsa binlik noktasıdır, silip deneriz
-                    return float(x_str.replace(".", ""))
-            
-            # Hiçbiri yoksa direkt çevir
-            return float(x_str)
-            
-        except:
-            return 0.0
-
     if not df.empty and "Tutar" in df.columns:
+        def temizle(x):
+            try:
+                if isinstance(x, (int, float)):
+                    return float(x)
+                
+                # Metin temizliği
+                x_str = str(x).strip().replace("₺", "").replace("TL", "").strip()
+                if not x_str: return 0.0
+                
+                # 1.000,50 formatı (TR)
+                if "," in x_str:
+                    x_str = x_str.replace(".", "") # Binlik noktayı sil
+                    x_str = x_str.replace(",", ".") # Virgülü nokta yap
+                    return float(x_str)
+                
+                # 1000.50 formatı (Python)
+                elif "." in x_str:
+                     try: return float(x_str)
+                     except: return float(x_str.replace(".", "")) # Belki binlik noktasıdır
+                
+                return float(x_str)
+            except:
+                return 0.0
+        
         df["Tutar"] = df["Tutar"].apply(temizle)
         
     return df
@@ -104,6 +90,7 @@ def veri_kaydet_liste(satirlar_listesi):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
+    # USER_ENTERED: "1963,33" verisini sayıya çevirir
     worksheet.append_rows(satirlar_listesi, value_input_option='USER_ENTERED')
 
 # --- TOPLU SİLME ---
@@ -112,7 +99,6 @@ def toplu_sil(silinecek_indexler):
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
     
-    # Yeniden yükle ve sil
     tum_veriler = worksheet.get_all_values()
     header = tum_veriler[0]
     rows = tum_veriler[1:]
@@ -142,10 +128,8 @@ def piyasa_fiyatlarini_getir_veya_olustur():
     data_dict = {row['Parametre']: row['Deger'] for row in records}
     
     try:
-        # Virgül/Nokta temizliği
         gold_str = str(data_dict.get('gram_altin', 6400)).replace(",", ".")
         saved_gold = float(gold_str)
-        
         silver_str = str(data_dict.get('gram_gumus', 80)).replace(",", ".")
         saved_silver = float(silver_str)
     except:
@@ -216,7 +200,7 @@ with st.sidebar:
     kategori_giris = st.selectbox("Kategori", kategoriler)
     aciklama_giris = st.text_input("Açıklama")
     
-    # --- TUTAR GİRİŞİ (TEXT INPUT İLE KONTROL) ---
+    # --- TUTAR GİRİŞİ ---
     tutar_text = st.text_input("Toplam Tutar (₺)", placeholder="Örn: 5890,00")
     
     def parse_tutar_manual(x):
@@ -229,14 +213,14 @@ with st.sidebar:
 
     tutar_float = parse_tutar_manual(tutar_text) if tutar_text else 0.0
     
-    # HESAPLAMA VE GÖNDERİM LİSTESİ HAZIRLIĞI
+    # Kayıt Hazırlığı
     rows_to_send = [] 
     
     if tutar_float > 0:
         ay_map = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
                   7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}
         
-        # Gönderirken "1963,33" formatına çeviriyoruz (TR Standardı)
+        # Google'a TR formatında (virgüllü) string gönderiyoruz
         if taksit_sayisi > 1:
             raw_aylik = tutar_float / taksit_sayisi
             tutar_str_tr = "{:.2f}".format(raw_aylik).replace(".", ",")
@@ -269,7 +253,7 @@ with st.sidebar:
             ])
 
         st.caption("📝 **Kayıt Önizlemesi**")
-        st.info(f"Girilen: {tutar_float:,.2f} TL -> Kaydedilecek: **{rows_to_send[0][5]} TL**")
+        st.info(f"Girilen: {tutar_float:,.2f} ₺ | Kaydedilecek: **{rows_to_send[0][5]} ₺**")
         
     if st.button("Kaydet 💾", type="primary"):
         if tutar_float > 0 and rows_to_send:
@@ -279,15 +263,6 @@ with st.sidebar:
             st.rerun()
         elif tutar_float == 0:
             st.error("Lütfen geçerli bir tutar girin.")
-
-    # --- HATA AYIKLAMA MODU (GİZLİ) ---
-    # Burayı açarak Drive'dan verinin NASIL geldiğini görebilirsin.
-    with st.expander("🛠️ Hata Ayıklama (Drive'dan Gelen Ham Veri)"):
-        st.write("Veritabanından okunan ilk 5 satırın 'Tutar' sütunu:")
-        if not df.empty:
-            st.write(df[["Tarih", "Aciklama", "Tutar"]].head())
-        else:
-            st.write("Veri yok.")
 
     # --- SİLME ---
     st.divider()
@@ -301,10 +276,9 @@ with st.sidebar:
                 if sil_secim:
                     idx = int(sil_secim.split("|")[0].replace("NO:", "").strip())
                     row_data = df.loc[idx]
-                    aciklama = str(row_data["Aciklama"])
                     tutar = row_data["Tutar"]
                     
-                    match = re.search(r"(.*?) \((\d+)/(\d+)\. Taksit\)", aciklama)
+                    match = re.search(r"(.*?) \((\d+)/(\d+)\. Taksit\)", str(row_data["Aciklama"]))
                     silinecekler = [idx]
                     
                     if match:
@@ -393,12 +367,24 @@ if not df.empty:
             k2.metric("Piyasa Değeri", f"{df_y['Guncel'].sum():,.2f} ₺")
             k3.metric("Kâr/Zarar", f"{df_y['Fark'].sum():,.2f} ₺")
             
-            st.dataframe(df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Guncel", "Fark"]], use_container_width=True)
+            # ₺ İBARESİ EKLENMİŞ TABLO
+            st.dataframe(
+                df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Guncel", "Fark"]].style.format({
+                    "Tutar": "{:,.2f} ₺",
+                    "Guncel": "{:,.2f} ₺",
+                    "Fark": "{:,.2f} ₺"
+                }), 
+                use_container_width=True
+            )
         else:
             st.info("Yatırım kaydı yok.")
 
     st.divider()
     st.subheader("📋 Tüm İşlemler")
-    st.dataframe(df_f.sort_values("Tarih", ascending=False), use_container_width=True)
+    # ₺ İBARESİ EKLENMİŞ TABLO
+    st.dataframe(
+        df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), 
+        use_container_width=True
+    )
 else:
     st.info("Veri yok.")
