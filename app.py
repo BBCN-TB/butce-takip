@@ -39,7 +39,7 @@ def get_gspread_client():
     client = gspread.authorize(creds)
     return client
 
-# --- VERİ YÜKLEME VE TEMİZLEME ---
+# --- VERİ YÜKLEME ---
 def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -52,11 +52,19 @@ def veri_yukle():
     if not df.empty and "Tutar" in df.columns:
         def temizle(x):
             try:
+                # Zaten sayıysa elleme
                 if isinstance(x, (int, float)):
                     return float(x)
+                
+                # Metinse temizle
                 x = str(x).replace(" TL", "").replace(" ₺", "").strip()
+                
+                # Eğer sadece nokta varsa (Python formatı: 1963.33) -> Elleme
                 if "." in x and "," not in x:
                     return float(x)
+                
+                # Eğer virgül varsa (Türkçe formatı: 1.963,33 veya 1963,33)
+                # Önce binlik noktaları sil, sonra virgülü noktaya çevir
                 x = x.replace(".", "").replace(",", ".")
                 return float(x)
             except:
@@ -126,8 +134,8 @@ except Exception as e:
 
 # --- SOL MENÜ ---
 with st.sidebar:
-    st.header("💰 Piyasa Fiyatları")  # <-- DEĞİŞİKLİK BURADA
-    st.info("Güncel piyasa fiyatlarını giriniz.") # <-- DEĞİŞİKLİK BURADA
+    st.header("💰 Piyasa Fiyatları")
+    st.info("Güncel piyasa fiyatlarını giriniz.")
     
     try:
         kayitli_altin, kayitli_gumus = piyasa_fiyatlarini_getir_veya_olustur()
@@ -186,8 +194,14 @@ with st.sidebar:
                 
                 rows_to_add = []
                 
+                # --- DÜZELTME BURADA YAPILDI ---
+                # Sayıları Google Sheets'in anlayacağı "Virgüllü String" formatına zorluyoruz.
+                
                 if taksit_sayisi > 1:
-                    aylik_tutar = tutar_giris / taksit_sayisi
+                    raw_tutar = tutar_giris / taksit_sayisi
+                    # Noktayı virgüle çevir (1963.33 -> "1963,33")
+                    aylik_tutar_fix = "{:.2f}".format(raw_tutar).replace(".", ",")
+                    
                     for i in range(taksit_sayisi):
                         gelecek_tarih = tarih_giris + relativedelta(months=i)
                         yeni_aciklama = f"{aciklama_giris} ({i+1}/{taksit_sayisi}. Taksit)"
@@ -198,18 +212,21 @@ with st.sidebar:
                             "Yıl": gelecek_tarih.year,
                             "Kategori": kategori_giris,
                             "Aciklama": yeni_aciklama,
-                            "Tutar": aylik_tutar,
+                            "Tutar": aylik_tutar_fix, # Düzeltilmiş tutarı gönder
                             "Tur": tur_giris
                         })
                 else:
                     final_aciklama = miktar_bilgisi + aciklama_giris if aciklama_giris else miktar_bilgisi + tur_giris
+                    # Tek çekimde de garanti olsun diye formatlıyoruz
+                    tutar_fix = "{:.2f}".format(tutar_giris).replace(".", ",")
+                    
                     rows_to_add.append({
                         "Tarih": tarih_giris,
                         "Ay": ay_map[tarih_giris.month],
                         "Yıl": tarih_giris.year,
                         "Kategori": kategori_giris,
                         "Aciklama": final_aciklama,
-                        "Tutar": tutar_giris,
+                        "Tutar": tutar_fix, # Düzeltilmiş tutar
                         "Tur": tur_giris
                     })
                 
