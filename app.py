@@ -194,39 +194,36 @@ with st.sidebar:
                 
                 rows_to_add = []
                 
-                # --- DÜZELTME BURADA YAPILDI ---
-                # Sayıları Google Sheets'in anlayacağı "Virgüllü String" formatına zorluyoruz.
+                # --- DÜZELTİLEN KISIM: Sayıları String'e çevirmeden DİREKT FLOAT gönderiyoruz ---
                 
                 if taksit_sayisi > 1:
-                    raw_tutar = tutar_giris / taksit_sayisi
-                    # Noktayı virgüle çevir (1963.33 -> "1963,33")
-                    aylik_tutar_fix = "{:.2f}".format(raw_tutar).replace(".", ",")
+                    # Küsüratı 2 basamakta yuvarla (Örn: 1963.3333 -> 1963.33)
+                    # Python float (noktalı) kullanır, Google Sheets API bunu otomatik anlar.
+                    aylik_tutar = round(tutar_giris / taksit_sayisi, 2)
                     
                     for i in range(taksit_sayisi):
                         gelecek_tarih = tarih_giris + relativedelta(months=i)
                         yeni_aciklama = f"{aciklama_giris} ({i+1}/{taksit_sayisi}. Taksit)"
                         
                         rows_to_add.append({
-                            "Tarih": gelecek_tarih,
+                            "Tarih": gelecek_tarih.strftime("%Y-%m-%d"), # Tarihi string olarak sabitle
                             "Ay": ay_map[gelecek_tarih.month],
                             "Yıl": gelecek_tarih.year,
                             "Kategori": kategori_giris,
                             "Aciklama": yeni_aciklama,
-                            "Tutar": aylik_tutar_fix, # Düzeltilmiş tutarı gönder
+                            "Tutar": aylik_tutar, # DİREKT SAYI (Float)
                             "Tur": tur_giris
                         })
                 else:
                     final_aciklama = miktar_bilgisi + aciklama_giris if aciklama_giris else miktar_bilgisi + tur_giris
-                    # Tek çekimde de garanti olsun diye formatlıyoruz
-                    tutar_fix = "{:.2f}".format(tutar_giris).replace(".", ",")
                     
                     rows_to_add.append({
-                        "Tarih": tarih_giris,
+                        "Tarih": tarih_giris.strftime("%Y-%m-%d"),
                         "Ay": ay_map[tarih_giris.month],
                         "Yıl": tarih_giris.year,
                         "Kategori": kategori_giris,
                         "Aciklama": final_aciklama,
-                        "Tutar": tutar_fix, # Düzeltilmiş tutar
+                        "Tutar": float(tutar_giris), # DİREKT SAYI (Float)
                         "Tur": tur_giris
                     })
                 
@@ -235,7 +232,6 @@ with st.sidebar:
                 
             st.success(f"{len(rows_to_add)} adet kayıt eklendi!")
             st.rerun()
-
     # --- SİLME BÖLÜMÜ ---
     st.divider()
     if not df.empty:
@@ -403,3 +399,4 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
+
