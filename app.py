@@ -5,10 +5,11 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-import re # Taksitleri tespit etmek için Regex kütüphanesi
+import re
 
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
+AYARLAR_TAB_ADI = "Ayarlar" # Fiyatları saklayacağımız yeni sekme
 st.set_page_config(page_title="Akıllı Bütçe", layout="wide", page_icon="📈")
 
 # --- GİRİŞ KONTROLÜ ---
@@ -59,34 +60,63 @@ def veri_kaydet(yeni_satir_df):
     for row in liste:
         worksheet.append_row(row)
 
-# --- GELİŞMİŞ SİLME FONKSİYONU (Çoklu Silme Destekli) ---
-def toplu_sil(silinecek_indexler):
+# --- YENİ: FİYATLARI SHEET'E KAYDETME VE OKUMA ---
+def piyasa_fiyatlarini_getir_veya_olustur():
     """
-    Belirtilen index listesindeki tüm kayıtları siler.
-    Google Sheets'te satır kayması olmaması için;
-    Tüm veriyi okur, pandas'ta siler, sayfayı temizler ve tekrar yazar.
-    Bu yöntem toplu silme için en güvenlisidir.
+    Google Sheets'te 'Ayarlar' sekmesi var mı bakar.
+    Yoksa oluşturur ve varsayılan değerleri yazar.
+    Varsa, oradaki kayıtlı fiyatları okur.
     """
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
-    worksheet = sh.sheet1
     
-    # Mevcut veriyi al
+    try:
+        ws = sh.worksheet(AYARLAR_TAB_ADI)
+    except:
+        # Sekme yoksa oluştur
+        ws = sh.add_worksheet(title=AYARLAR_TAB_ADI, rows=10, cols=5)
+        # Başlıkları ve varsayılanları yaz
+        ws.update('A1', [['Parametre', 'Deger'], ['gram_altin', 6400.00], ['gram_gumus', 80.00]])
+        return 6400.00, 80.00
+    
+    # Verileri oku
+    records = ws.get_all_records()
+    # Listeden sözlüğe çevir ki kolay bulalım
+    data_dict = {row['Parametre']: row['Deger'] for row in records}
+    
+    # Altın ve Gümüşü çek (Virgül/Nokta temizliği yaparak)
+    try:
+        saved_gold = float(str(data_dict.get('gram_altin', 6400)).replace(",", "."))
+        saved_silver = float(str(data_dict.get('gram_gumus', 80)).replace(",", "."))
+    except:
+        saved_gold, saved_silver = 6400.00, 80.00
+        
+    return saved_gold, saved_silver
+
+def piyasa_fiyatlarini_guncelle(yeni_altin, yeni_gumus):
+    """
+    Google Sheets'teki fiyatları günceller.
+    """
+    client = get_gspread_client()
+    sh = client.open(SHEET_ADI)
+    ws = sh.worksheet(AYARLAR_TAB_ADI)
+    
+    # A2 ve B2 (Altın), A3 ve B3 (Gümüş) olduğunu varsayarak güncelleme yapıyoruz
+    # Garanti olsun diye hücre hücre güncelliyoruz
+    ws.update_acell('B2', yeni_altin) # Altın Değeri
+    ws.update_acell('B3', yeni_gumus) # Gümüş Değeri
+
+# --- TOPLU SİLME ---
+def toplu_sil(silinecek_indexler):
+    client = get_gspread_client()
+    sh = client.open(SHEET_ADI)
+    worksheet = sh.sheet1
     data = worksheet.get_all_records()
     df_mevcut = pd.DataFrame(data)
-    
-    # Indexlere göre sil (Pandas indexleri ile eşleşmeli)
     df_yeni = df_mevcut.drop(index=silinecek_indexler)
-    
-    # Sayfayı temizle
     worksheet.clear()
-    
-    # Başlıkları geri yaz
     worksheet.append_row(df_mevcut.columns.tolist())
-    
-    # Kalan verileri yaz
     if not df_yeni.empty:
-        # Tarih formatını string yapmayalım, gspread halleder ama garanti olsun
         values = df_yeni.astype(str).values.tolist()
         worksheet.append_rows(values)
 
@@ -97,14 +127,31 @@ except Exception as e:
     st.error(f"Google Sheets Bağlantı Hatası: {e}")
     st.stop()
 
-# --- SOL MENÜ (MANUEL PİYASA) ---
+# --- SOL MENÜ (KALICI MANUEL PİYASA) ---
 with st.sidebar:
-    st.header("🌍 Piyasa Fiyatları (Manuel)")
-    st.info("Altın ve Gümüş fiyatlarını buradan güncelleyebilirsin.")
+    st.header("🌍 Piyasa Fiyatları")
+    st.info("Fiyatları bir kez girip sabitleyin, her girişte hatırlanır.")
     
-    gold_val = st.number_input("Gr Altın (₺)", value=6400.00, step=10.0, format="%.2f")
-    silver_val = st.number_input("Gr Gümüş (₺)", value=80.00, step=1.0, format="%.2f")
+    # 1. Kayıtlı Fiyatları Getir
+    try:
+        kayitli_altin, kayitli_gumus = piyasa_fiyatlarini_getir_veya_olustur()
+    except Exception as e:
+        st.error(f"Ayarlar yüklenemedi: {e}")
+        kayitli_altin, kayitli_gumus = 6400.00, 80.00
     
+    # 2. Input Alanları (Varsayılan değer olarak kayıtlı veriyi kullanır)
+    gold_val = st.number_input("Gr Altın (₺)", value=kayitli_altin, step=10.0, format="%.2f")
+    silver_val = st.number_input("Gr Gümüş (₺)", value=kayitli_gumus, step=1.0, format="%.2f")
+    
+    # 3. Kaydet Butonu
+    if st.button("Fiyatları Sabitle 💾"):
+        with st.spinner("Ayarlar kaydediliyor..."):
+            piyasa_fiyatlarini_guncelle(gold_val, silver_val)
+        st.success("Fiyatlar güncellendi!")
+        # Sayfayı yenilemeye gerek yok, değerler zaten güncel inputta duruyor
+        # Ama session state'i garantiye alalım
+        st.rerun()
+
     # Session'a kaydet
     st.session_state['piyasa_gold'] = gold_val
     st.session_state['piyasa_silver'] = silver_val
@@ -214,28 +261,21 @@ with st.sidebar:
                 else:
                     st.warning("Geçen ay uygun sabit gider bulunamadı.")
 
-    # --- GELİŞMİŞ SİLME BÖLÜMÜ (AKILLI TAKSİT TESPİTİ) ---
+    # --- GELİŞMİŞ SİLME BÖLÜMÜ ---
     st.divider()
     if not df.empty:
         with st.expander("🗑️ Kayıt Sil (Akıllı)"):
             st.info("Bir taksiti seçerseniz, sistem o taksit grubunun tamamını silmeyi teklif eder.")
             df_gosterim = df.reset_index().sort_index(ascending=False)
             
-            # Seçeneklerde Açıklama da görünsün ki taksit olduğu anlaşılsın
             secenekler = df_gosterim.apply(lambda x: f"NO: {x['index']} | {x['Tarih']} | {x['Aciklama']} | {x['Tutar']:,.2f} ₺", axis=1)
             sil_secim = st.selectbox("Silinecek Kayıt:", secenekler)
             
             if sil_secim:
-                # Seçilen indexi bul
                 secilen_index = int(sil_secim.split("|")[0].replace("NO:", "").strip())
-                
-                # Seçilen satırın detaylarını al
                 secilen_satir = df.loc[secilen_index]
                 aciklama = secilen_satir["Aciklama"]
                 tutar = secilen_satir["Tutar"]
-                
-                # Taksit kontrolü yap (Regex ile)
-                # Örnek Format: "iPhone 15 (1/12. Taksit)" -> Gruplar: ("iPhone 15", "1", "12")
                 match = re.search(r"(.*?) \((\d+)/(\d+)\. Taksit\)", str(aciklama))
                 
                 silinecek_liste = [secilen_index]
@@ -243,14 +283,13 @@ with st.sidebar:
                 is_toplu = False
                 
                 if match:
-                    urun_adi = match.group(1) # Örn: iPhone 15
-                    toplam_taksit = match.group(3) # Örn: 12
+                    urun_adi = match.group(1) 
+                    toplam_taksit = match.group(3)
                     
-                    # Aynı ürün adına ve aynı toplam taksit sayısına sahip diğerlerini bul
                     benzerler = df[
                         (df["Aciklama"].str.contains(re.escape(urun_adi), na=False)) & 
                         (df["Aciklama"].str.contains(f"/{toplam_taksit}. Taksit", na=False)) &
-                        (df["Tutar"] == tutar) # Tutarı da kontrol et yanlışlık olmasın
+                        (df["Tutar"] == tutar)
                     ]
                     
                     if not benzerler.empty:
@@ -263,12 +302,11 @@ with st.sidebar:
                 if st.button(buton_metni):
                     with st.spinner('Kayıtlar veritabanından siliniyor...'):
                         toplu_sil(silinecek_liste)
-                    
                     msg = "Tüm taksitler başarıyla silindi!" if is_toplu else "Kayıt silindi!"
                     st.success(msg)
                     st.rerun()
 
-# --- DASHBOARD (AKILLI KAR/ZARAR HESAPLAMALI) ---
+# --- DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
@@ -322,7 +360,6 @@ if not df.empty:
         if not df_y.empty:
             guncel_gold = st.session_state.get('piyasa_gold', 0)
             guncel_silver = st.session_state.get('piyasa_silver', 0)
-            # Dolar/Euro kaldırıldığı için 0 varsayıyoruz
             guncel_usd = 0 
             guncel_eur = 0
             
@@ -344,7 +381,6 @@ if not df.empty:
                     elif "gümüş" in kategori:
                         return miktar * guncel_silver
                     elif "dolar" in kategori or "döviz" in kategori:
-                        # Dolar/Euro girişi olmadığı için değer 0 hesaplanacak
                         if "euro" in aciklama.lower():
                             return miktar * guncel_eur
                         return miktar * guncel_usd
