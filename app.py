@@ -39,7 +39,7 @@ def get_gspread_client():
     client = gspread.authorize(creds)
     return client
 
-# --- VERİ YÜKLEME VE SENİN TEMİZLEME FONKSİYONUN ---
+# --- VERİ YÜKLEME ---
 def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -50,23 +50,16 @@ def veri_yukle():
     df = pd.DataFrame(data)
     
     if not df.empty and "Tutar" in df.columns:
-        # SENİN GÖNDERDİĞİN SAĞLAM TEMİZLEME KODU
         def temizle(x):
             try:
                 if isinstance(x, (int, float)):
                     return float(x)
-
-                x = str(x).strip()
-                x = x.replace("₺", "").replace("TL", "").strip()
-
-                # Eğer hem nokta hem virgül varsa → Türkçe format (Örn: 1.250,50)
+                x = str(x).strip().replace("₺", "").replace("TL", "").strip()
+                # Türkçe format temizliği
                 if "," in x and "." in x:
-                    x = x.replace(".", "").replace(",", ".")
-                # Sadece virgül varsa → Türkçe ondalık (Örn: 1250,50)
+                     x = x.replace(".", "").replace(",", ".")
                 elif "," in x:
-                    x = x.replace(",", ".")
-                
-                # Sadece nokta varsa (Python standardı) zaten float(x) onu halleder.
+                     x = x.replace(",", ".")
                 return float(x)
             except:
                 return 0.0
@@ -75,22 +68,17 @@ def veri_yukle():
         
     return df
 
-# --- VERİ KAYDETME (RAW MODU - HATA ÖNLEYİCİ) ---
+# --- VERİ KAYDETME (RAW MODU) ---
 def veri_kaydet(yeni_satir_df):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
-    
-    # Tarihi string yapıyoruz
     yeni_satir_df["Tarih"] = yeni_satir_df["Tarih"].astype(str)
-    
     liste = yeni_satir_df.values.tolist()
     for row in liste:
-        # RAW modu: Sayıları metne çevirmeden, matematiksel değer olarak gönderir.
-        # Böylece Google Sheets nokta/virgül yorumu yapmaz, direkt sayıyı hücreye yazar.
         worksheet.append_row(row, value_input_option='RAW')
 
-# --- AYARLAR SEKME FONKSİYONLARI ---
+# --- AYARLAR ---
 def piyasa_fiyatlarini_getir_veya_olustur():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -105,12 +93,8 @@ def piyasa_fiyatlarini_getir_veya_olustur():
     data_dict = {row['Parametre']: row['Deger'] for row in records}
     
     try:
-        # Buradaki okuma işlemi için de senin mantığını kullanabiliriz basitçe
-        gold_raw = str(data_dict.get('gram_altin', 6400)).replace(",", ".")
-        saved_gold = float(gold_raw)
-        
-        silver_raw = str(data_dict.get('gram_gumus', 80)).replace(",", ".")
-        saved_silver = float(silver_raw)
+        saved_gold = float(str(data_dict.get('gram_altin', 6400)).replace(",", "."))
+        saved_silver = float(str(data_dict.get('gram_gumus', 80)).replace(",", "."))
     except:
         saved_gold, saved_silver = 6400.00, 80.00
     return saved_gold, saved_silver
@@ -119,9 +103,8 @@ def piyasa_fiyatlarini_guncelle(yeni_altin, yeni_gumus):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     ws = sh.worksheet(AYARLAR_TAB_ADI)
-    # Fiyatları da RAW olarak sayı formatında gönderelim
-    ws.update_acell('B2', new_val=yeni_altin)
-    ws.update_acell('B3', new_val=yeni_gumus)
+    ws.update_acell('B2', yeni_altin)
+    ws.update_acell('B3', yeni_gumus)
 
 # --- TOPLU SİLME ---
 def toplu_sil(silinecek_indexler):
@@ -134,11 +117,9 @@ def toplu_sil(silinecek_indexler):
     worksheet.clear()
     worksheet.append_row(df_mevcut.columns.tolist())
     if not df_yeni.empty:
-        # Geri yüklerken tarihlerin string olduğundan emin olalım
-        # ve RAW modunda gönderelim
         values = df_yeni.values.tolist()
         for i in range(len(values)):
-            values[i][0] = str(values[i][0]) # Tarih sütunu
+            values[i][0] = str(values[i][0])
         worksheet.append_rows(values, value_input_option='RAW')
 
 # --- ANA VERİYİ ÇEK ---
@@ -200,7 +181,21 @@ with st.sidebar:
 
     kategori_giris = st.selectbox("Kategori", kategoriler)
     aciklama_giris = st.text_input("Açıklama")
-    tutar_giris = st.number_input("Toplam Tutar (₺)", min_value=0.0, format="%.2f")
+    
+    # --- YENİ EKLENEN KISIM: TEXT INPUT İLE TUTAR ALMA ---
+    tutar_text = st.text_input("Toplam Tutar (₺)", placeholder="Örn: 5890,00")
+    
+    # Kullanıcının verdiği parse fonksiyonu
+    def parse_tutar(x):
+        try:
+            x = x.replace("₺", "").replace("TL", "").strip()
+            # 1.000,00 -> Noktayı sil, virgülü nokta yap
+            x = x.replace(".", "").replace(",", ".")
+            return float(x)
+        except:
+            return 0.0
+
+    tutar_giris = parse_tutar(tutar_text) if tutar_text else 0.0
     
     if st.button("Kaydet 💾", type="primary"):
         if tutar_giris > 0:
@@ -209,10 +204,6 @@ with st.sidebar:
                           7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}
                 
                 rows_to_add = []
-                
-                # --- HESAPLAMA VE KAYIT (RAW MODUNA UYGUN) ---
-                # Burada string formatlama yapmıyoruz. Direkt float (sayı) gönderiyoruz.
-                # veri_kaydet fonksiyonundaki 'RAW' ayarı bunu Sheets'e doğru aktaracak.
                 
                 if taksit_sayisi > 1:
                     raw_tutar = round(tutar_giris / taksit_sayisi, 2)
@@ -227,7 +218,7 @@ with st.sidebar:
                             "Yıl": gelecek_tarih.year,
                             "Kategori": kategori_giris,
                             "Aciklama": yeni_aciklama,
-                            "Tutar": raw_tutar, # Direkt Sayı (Float)
+                            "Tutar": raw_tutar, 
                             "Tur": tur_giris
                         })
                 else:
@@ -239,7 +230,7 @@ with st.sidebar:
                         "Yıl": tarih_giris.year,
                         "Kategori": kategori_giris,
                         "Aciklama": final_aciklama,
-                        "Tutar": float(tutar_giris), # Direkt Sayı (Float)
+                        "Tutar": float(tutar_giris),
                         "Tur": tur_giris
                     })
                 
@@ -248,6 +239,8 @@ with st.sidebar:
                 
             st.success(f"{len(rows_to_add)} adet kayıt eklendi!")
             st.rerun()
+        elif tutar_text and tutar_giris == 0.0:
+            st.error("Lütfen geçerli bir sayı girin! (Örn: 5890,50)")
 
     # --- SİLME BÖLÜMÜ ---
     st.divider()
