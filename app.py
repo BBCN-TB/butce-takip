@@ -39,7 +39,7 @@ def get_gspread_client():
     client = gspread.authorize(creds)
     return client
 
-# --- VERİ YÜKLEME ---
+# --- VERİ YÜKLEME VE TEMİZLEME ---
 def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -52,19 +52,19 @@ def veri_yukle():
     if not df.empty and "Tutar" in df.columns:
         def temizle(x):
             try:
-                # Zaten sayıysa elleme
+                # Eğer zaten sayı formatındaysa elleme
                 if isinstance(x, (int, float)):
                     return float(x)
                 
-                # Metinse temizle
+                # Metin ise temizlik başlasın
                 x = str(x).replace(" TL", "").replace(" ₺", "").strip()
                 
-                # Eğer sadece nokta varsa (Python formatı: 1963.33) -> Elleme
+                # Eğer içinde nokta var ama virgül YOKSA (Python formatı: 1963.33) -> Elleme
                 if "." in x and "," not in x:
                     return float(x)
                 
                 # Eğer virgül varsa (Türkçe formatı: 1.963,33 veya 1963,33)
-                # Önce binlik noktaları sil, sonra virgülü noktaya çevir
+                # Önce binlik ayırıcı olan noktaları sil, sonra virgülü noktaya çevir
                 x = x.replace(".", "").replace(",", ".")
                 return float(x)
             except:
@@ -74,14 +74,21 @@ def veri_yukle():
         
     return df
 
+# --- DÜZELTİLMİŞ KAYIT FONKSİYONU (USER_ENTERED) ---
 def veri_kaydet(yeni_satir_df):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
+    
+    # Tarihi string yapıyoruz ki format bozulmasın
     yeni_satir_df["Tarih"] = yeni_satir_df["Tarih"].astype(str)
+    
     liste = yeni_satir_df.values.tolist()
     for row in liste:
-        worksheet.append_row(row)
+        # BURASI KRİTİK: value_input_option='USER_ENTERED'
+        # Bu komut, gönderdiğimiz virgüllü string'i (örn: "1963,33") Google Sheets'in
+        # kendi sayı formatına çevirmesini sağlar.
+        worksheet.append_row(row, value_input_option='USER_ENTERED')
 
 # --- AYARLAR SEKME FONKSİYONLARI ---
 def piyasa_fiyatlarini_getir_veya_olustur():
@@ -122,8 +129,9 @@ def toplu_sil(silinecek_indexler):
     worksheet.clear()
     worksheet.append_row(df_mevcut.columns.tolist())
     if not df_yeni.empty:
+        # Silme işleminde verileri geri yüklerken de USER_ENTERED kullanalım ki bozulmasın
         values = df_yeni.astype(str).values.tolist()
-        worksheet.append_rows(values)
+        worksheet.append_rows(values, value_input_option='USER_ENTERED')
 
 # --- ANA VERİYİ ÇEK ---
 try:
@@ -194,28 +202,31 @@ with st.sidebar:
                 
                 rows_to_add = []
                 
-                # --- DÜZELTİLEN KISIM: Sayıları String'e çevirmeden DİREKT FLOAT gönderiyoruz ---
+                # --- DÜZELTİLEN KISIM: VİRGÜLLÜ STRING FORMATI ---
                 
                 if taksit_sayisi > 1:
-                    # Küsüratı 2 basamakta yuvarla (Örn: 1963.3333 -> 1963.33)
-                    # Python float (noktalı) kullanır, Google Sheets API bunu otomatik anlar.
-                    aylik_tutar = round(tutar_giris / taksit_sayisi, 2)
+                    raw_tutar = tutar_giris / taksit_sayisi
+                    # Noktayı virgüle çevir (1963.33 -> "1963,33")
+                    # Bu string olarak gidiyor ama 'USER_ENTERED' sayesinde Sheets bunu sayı yapıyor.
+                    aylik_tutar_str = "{:.2f}".format(raw_tutar).replace(".", ",")
                     
                     for i in range(taksit_sayisi):
                         gelecek_tarih = tarih_giris + relativedelta(months=i)
                         yeni_aciklama = f"{aciklama_giris} ({i+1}/{taksit_sayisi}. Taksit)"
                         
                         rows_to_add.append({
-                            "Tarih": gelecek_tarih.strftime("%Y-%m-%d"), # Tarihi string olarak sabitle
+                            "Tarih": gelecek_tarih.strftime("%Y-%m-%d"),
                             "Ay": ay_map[gelecek_tarih.month],
                             "Yıl": gelecek_tarih.year,
                             "Kategori": kategori_giris,
                             "Aciklama": yeni_aciklama,
-                            "Tutar": aylik_tutar, # DİREKT SAYI (Float)
+                            "Tutar": aylik_tutar_str, # Virgüllü String
                             "Tur": tur_giris
                         })
                 else:
                     final_aciklama = miktar_bilgisi + aciklama_giris if aciklama_giris else miktar_bilgisi + tur_giris
+                    # Tek çekim de olsa virgüllü string yapıyoruz
+                    tutar_str = "{:.2f}".format(tutar_giris).replace(".", ",")
                     
                     rows_to_add.append({
                         "Tarih": tarih_giris.strftime("%Y-%m-%d"),
@@ -223,7 +234,7 @@ with st.sidebar:
                         "Yıl": tarih_giris.year,
                         "Kategori": kategori_giris,
                         "Aciklama": final_aciklama,
-                        "Tutar": float(tutar_giris), # DİREKT SAYI (Float)
+                        "Tutar": tutar_str, # Virgüllü String
                         "Tur": tur_giris
                     })
                 
@@ -232,6 +243,7 @@ with st.sidebar:
                 
             st.success(f"{len(rows_to_add)} adet kayıt eklendi!")
             st.rerun()
+
     # --- SİLME BÖLÜMÜ ---
     st.divider()
     if not df.empty:
@@ -399,4 +411,3 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
-
