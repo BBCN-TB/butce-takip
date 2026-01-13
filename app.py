@@ -39,7 +39,7 @@ def get_gspread_client():
     client = gspread.authorize(creds)
     return client
 
-# --- VERİ YÜKLEME ---
+# --- VERİ YÜKLEME VE SENİN TEMİZLEME FONKSİYONUN ---
 def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -50,21 +50,23 @@ def veri_yukle():
     df = pd.DataFrame(data)
     
     if not df.empty and "Tutar" in df.columns:
+        # SENİN GÖNDERDİĞİN SAĞLAM TEMİZLEME KODU
         def temizle(x):
             try:
-                # Zaten sayıysa elleme
                 if isinstance(x, (int, float)):
                     return float(x)
+
+                x = str(x).strip()
+                x = x.replace("₺", "").replace("TL", "").strip()
+
+                # Eğer hem nokta hem virgül varsa → Türkçe format (Örn: 1.250,50)
+                if "," in x and "." in x:
+                    x = x.replace(".", "").replace(",", ".")
+                # Sadece virgül varsa → Türkçe ondalık (Örn: 1250,50)
+                elif "," in x:
+                    x = x.replace(",", ".")
                 
-                # Metinse temizle
-                x = str(x).replace(" TL", "").replace(" ₺", "").strip()
-                
-                # Eğer sadece nokta varsa (Python formatı: 1963.33) -> Elleme
-                if "." in x and "," not in x:
-                    return float(x)
-                
-                # Eğer virgül varsa (Türkçe formatı: 1.963,33 veya 1963,33)
-                x = x.replace(".", "").replace(",", ".")
+                # Sadece nokta varsa (Python standardı) zaten float(x) onu halleder.
                 return float(x)
             except:
                 return 0.0
@@ -73,7 +75,7 @@ def veri_yukle():
         
     return df
 
-# --- KESİN ÇÖZÜM: RAW (HAM) VERİ KAYDI ---
+# --- VERİ KAYDETME (RAW MODU - HATA ÖNLEYİCİ) ---
 def veri_kaydet(yeni_satir_df):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -84,9 +86,8 @@ def veri_kaydet(yeni_satir_df):
     
     liste = yeni_satir_df.values.tolist()
     for row in liste:
-        # BURASI DEĞİŞTİ: value_input_option='RAW'
-        # Bu modda Google, veriyi yorumlamaz, olduğu gibi sayı olarak kabul eder.
-        # Nokta/Virgül hatası oluşmaz.
+        # RAW modu: Sayıları metne çevirmeden, matematiksel değer olarak gönderir.
+        # Böylece Google Sheets nokta/virgül yorumu yapmaz, direkt sayıyı hücreye yazar.
         worksheet.append_row(row, value_input_option='RAW')
 
 # --- AYARLAR SEKME FONKSİYONLARI ---
@@ -104,8 +105,12 @@ def piyasa_fiyatlarini_getir_veya_olustur():
     data_dict = {row['Parametre']: row['Deger'] for row in records}
     
     try:
-        saved_gold = float(str(data_dict.get('gram_altin', 6400)).replace(",", "."))
-        saved_silver = float(str(data_dict.get('gram_gumus', 80)).replace(",", "."))
+        # Buradaki okuma işlemi için de senin mantığını kullanabiliriz basitçe
+        gold_raw = str(data_dict.get('gram_altin', 6400)).replace(",", ".")
+        saved_gold = float(gold_raw)
+        
+        silver_raw = str(data_dict.get('gram_gumus', 80)).replace(",", ".")
+        saved_silver = float(silver_raw)
     except:
         saved_gold, saved_silver = 6400.00, 80.00
     return saved_gold, saved_silver
@@ -114,8 +119,9 @@ def piyasa_fiyatlarini_guncelle(yeni_altin, yeni_gumus):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     ws = sh.worksheet(AYARLAR_TAB_ADI)
-    ws.update_acell('B2', yeni_altin)
-    ws.update_acell('B3', yeni_gumus)
+    # Fiyatları da RAW olarak sayı formatında gönderelim
+    ws.update_acell('B2', new_val=yeni_altin)
+    ws.update_acell('B3', new_val=yeni_gumus)
 
 # --- TOPLU SİLME ---
 def toplu_sil(silinecek_indexler):
@@ -128,14 +134,11 @@ def toplu_sil(silinecek_indexler):
     worksheet.clear()
     worksheet.append_row(df_mevcut.columns.tolist())
     if not df_yeni.empty:
-        # Geri yüklerken de RAW kullanıyoruz
+        # Geri yüklerken tarihlerin string olduğundan emin olalım
+        # ve RAW modunda gönderelim
         values = df_yeni.values.tolist()
-        # Tarihleri string yapmamız lazım yoksa RAW modunda tarih bozulabilir
-        # Ancak yukarıda df_yeni oluştururken zaten formatlar korunuyor.
-        # Garanti olsun diye tarihi string yapalım:
         for i in range(len(values)):
-            values[i][0] = str(values[i][0]) # 0. indeks Tarih sütunu
-        
+            values[i][0] = str(values[i][0]) # Tarih sütunu
         worksheet.append_rows(values, value_input_option='RAW')
 
 # --- ANA VERİYİ ÇEK ---
@@ -207,12 +210,12 @@ with st.sidebar:
                 
                 rows_to_add = []
                 
-                # --- RAW MODUNA UYGUN VERİ HAZIRLIĞI ---
-                # Artık string'e çevirmiyoruz, direkt sayı (FLOAT) gönderiyoruz.
-                # RAW modu olduğu için Google bunu sayı olarak alacak, formatlamayacak.
+                # --- HESAPLAMA VE KAYIT (RAW MODUNA UYGUN) ---
+                # Burada string formatlama yapmıyoruz. Direkt float (sayı) gönderiyoruz.
+                # veri_kaydet fonksiyonundaki 'RAW' ayarı bunu Sheets'e doğru aktaracak.
                 
                 if taksit_sayisi > 1:
-                    raw_tutar = round(tutar_giris / taksit_sayisi, 2) # Python float (1963.33)
+                    raw_tutar = round(tutar_giris / taksit_sayisi, 2)
                     
                     for i in range(taksit_sayisi):
                         gelecek_tarih = tarih_giris + relativedelta(months=i)
@@ -224,7 +227,7 @@ with st.sidebar:
                             "Yıl": gelecek_tarih.year,
                             "Kategori": kategori_giris,
                             "Aciklama": yeni_aciklama,
-                            "Tutar": raw_tutar, # Direkt Sayı
+                            "Tutar": raw_tutar, # Direkt Sayı (Float)
                             "Tur": tur_giris
                         })
                 else:
@@ -236,7 +239,7 @@ with st.sidebar:
                         "Yıl": tarih_giris.year,
                         "Kategori": kategori_giris,
                         "Aciklama": final_aciklama,
-                        "Tutar": float(tutar_giris), # Direkt Sayı
+                        "Tutar": float(tutar_giris), # Direkt Sayı (Float)
                         "Tur": tur_giris
                     })
                 
