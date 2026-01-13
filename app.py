@@ -51,27 +51,24 @@ def veri_yukle():
     
     if not df.empty and "Tutar" in df.columns:
         def temizle(x):
-            try:
-                # Zaten sayıysa elleme
-                if isinstance(x, (int, float)):
-                    return float(x)
-                
-                # Metinse temizle
-                x = str(x).replace(" TL", "").replace(" ₺", "").strip()
-                
-                # Eğer sadece nokta varsa (Python formatı: 1963.33) -> Elleme
-                if "." in x and "," not in x:
-                    return float(x)
-                
-                # Eğer virgül varsa (Türkçe formatı: 1.963,33 veya 1963,33)
-                x = x.replace(".", "").replace(",", ".")
-                return float(x)
-            except:
-                return 0.0
+    try:
+        if isinstance(x, (int, float)):
+            return float(x)
 
-        df["Tutar"] = df["Tutar"].apply(temizle)
-        
-    return df
+        x = str(x).strip()
+        x = x.replace("₺", "").replace("TL", "").strip()
+
+        # Eğer hem nokta hem virgül varsa → Türkçe format
+        if "," in x and "." in x:
+            x = x.replace(".", "").replace(",", ".")
+        # Sadece virgül varsa → Türkçe ondalık
+        elif "," in x:
+            x = x.replace(",", ".")
+
+        return float(x)
+    except:
+        return 0.0
+
 
 # --- KESİN ÇÖZÜM: RAW (HAM) VERİ KAYDI ---
 def veri_kaydet(yeni_satir_df):
@@ -413,3 +410,4 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
+
