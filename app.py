@@ -39,7 +39,7 @@ def get_gspread_client():
     client = gspread.authorize(creds)
     return client
 
-# --- VERİ YÜKLEME VE TEMİZLEME ---
+# --- VERİ YÜKLEME ---
 def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -52,19 +52,18 @@ def veri_yukle():
     if not df.empty and "Tutar" in df.columns:
         def temizle(x):
             try:
-                # Eğer zaten sayı formatındaysa elleme
+                # Zaten sayıysa elleme
                 if isinstance(x, (int, float)):
                     return float(x)
                 
-                # Metin ise temizlik başlasın
+                # Metinse temizle
                 x = str(x).replace(" TL", "").replace(" ₺", "").strip()
                 
-                # Eğer içinde nokta var ama virgül YOKSA (Python formatı: 1963.33) -> Elleme
+                # Eğer sadece nokta varsa (Python formatı: 1963.33) -> Elleme
                 if "." in x and "," not in x:
                     return float(x)
                 
                 # Eğer virgül varsa (Türkçe formatı: 1.963,33 veya 1963,33)
-                # Önce binlik ayırıcı olan noktaları sil, sonra virgülü noktaya çevir
                 x = x.replace(".", "").replace(",", ".")
                 return float(x)
             except:
@@ -74,21 +73,21 @@ def veri_yukle():
         
     return df
 
-# --- DÜZELTİLMİŞ KAYIT FONKSİYONU (USER_ENTERED) ---
+# --- KESİN ÇÖZÜM: RAW (HAM) VERİ KAYDI ---
 def veri_kaydet(yeni_satir_df):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
     
-    # Tarihi string yapıyoruz ki format bozulmasın
+    # Tarihi string yapıyoruz
     yeni_satir_df["Tarih"] = yeni_satir_df["Tarih"].astype(str)
     
     liste = yeni_satir_df.values.tolist()
     for row in liste:
-        # BURASI KRİTİK: value_input_option='USER_ENTERED'
-        # Bu komut, gönderdiğimiz virgüllü string'i (örn: "1963,33") Google Sheets'in
-        # kendi sayı formatına çevirmesini sağlar.
-        worksheet.append_row(row, value_input_option='USER_ENTERED')
+        # BURASI DEĞİŞTİ: value_input_option='RAW'
+        # Bu modda Google, veriyi yorumlamaz, olduğu gibi sayı olarak kabul eder.
+        # Nokta/Virgül hatası oluşmaz.
+        worksheet.append_row(row, value_input_option='RAW')
 
 # --- AYARLAR SEKME FONKSİYONLARI ---
 def piyasa_fiyatlarini_getir_veya_olustur():
@@ -129,9 +128,15 @@ def toplu_sil(silinecek_indexler):
     worksheet.clear()
     worksheet.append_row(df_mevcut.columns.tolist())
     if not df_yeni.empty:
-        # Silme işleminde verileri geri yüklerken de USER_ENTERED kullanalım ki bozulmasın
-        values = df_yeni.astype(str).values.tolist()
-        worksheet.append_rows(values, value_input_option='USER_ENTERED')
+        # Geri yüklerken de RAW kullanıyoruz
+        values = df_yeni.values.tolist()
+        # Tarihleri string yapmamız lazım yoksa RAW modunda tarih bozulabilir
+        # Ancak yukarıda df_yeni oluştururken zaten formatlar korunuyor.
+        # Garanti olsun diye tarihi string yapalım:
+        for i in range(len(values)):
+            values[i][0] = str(values[i][0]) # 0. indeks Tarih sütunu
+        
+        worksheet.append_rows(values, value_input_option='RAW')
 
 # --- ANA VERİYİ ÇEK ---
 try:
@@ -202,13 +207,12 @@ with st.sidebar:
                 
                 rows_to_add = []
                 
-                # --- DÜZELTİLEN KISIM: VİRGÜLLÜ STRING FORMATI ---
+                # --- RAW MODUNA UYGUN VERİ HAZIRLIĞI ---
+                # Artık string'e çevirmiyoruz, direkt sayı (FLOAT) gönderiyoruz.
+                # RAW modu olduğu için Google bunu sayı olarak alacak, formatlamayacak.
                 
                 if taksit_sayisi > 1:
-                    raw_tutar = tutar_giris / taksit_sayisi
-                    # Noktayı virgüle çevir (1963.33 -> "1963,33")
-                    # Bu string olarak gidiyor ama 'USER_ENTERED' sayesinde Sheets bunu sayı yapıyor.
-                    aylik_tutar_str = "{:.2f}".format(raw_tutar).replace(".", ",")
+                    raw_tutar = round(tutar_giris / taksit_sayisi, 2) # Python float (1963.33)
                     
                     for i in range(taksit_sayisi):
                         gelecek_tarih = tarih_giris + relativedelta(months=i)
@@ -220,13 +224,11 @@ with st.sidebar:
                             "Yıl": gelecek_tarih.year,
                             "Kategori": kategori_giris,
                             "Aciklama": yeni_aciklama,
-                            "Tutar": aylik_tutar_str, # Virgüllü String
+                            "Tutar": raw_tutar, # Direkt Sayı
                             "Tur": tur_giris
                         })
                 else:
                     final_aciklama = miktar_bilgisi + aciklama_giris if aciklama_giris else miktar_bilgisi + tur_giris
-                    # Tek çekim de olsa virgüllü string yapıyoruz
-                    tutar_str = "{:.2f}".format(tutar_giris).replace(".", ",")
                     
                     rows_to_add.append({
                         "Tarih": tarih_giris.strftime("%Y-%m-%d"),
@@ -234,7 +236,7 @@ with st.sidebar:
                         "Yıl": tarih_giris.year,
                         "Kategori": kategori_giris,
                         "Aciklama": final_aciklama,
-                        "Tutar": tutar_str, # Virgüllü String
+                        "Tutar": float(tutar_giris), # Direkt Sayı
                         "Tur": tur_giris
                     })
                 
