@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px  # <-- EKSİK OLAN BU SATIRDI, EKLENDİ.
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
@@ -195,9 +196,7 @@ with st.sidebar:
     tutar_float = parse_tutar_manual(tutar_text) if tutar_text else 0.0
     
     # --- HESAPLAMA VE ÖNİZLEME ---
-    # Burada hesaplamayı yapıp, Google'a göndereceğimiz STRING formatını hazırlıyoruz.
-    
-    rows_to_send = [] # Google'a gidecek liste
+    rows_to_send = [] 
     
     if tutar_float > 0:
         ay_map = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
