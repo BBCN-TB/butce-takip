@@ -9,7 +9,7 @@ import re
 
 # --- AYARLAR ---
 SHEET_ADI = "Butce_Veritabanı"
-AYARLAR_TAB_ADI = "Ayarlar" # Fiyatları saklayacağımız yeni sekme
+AYARLAR_TAB_ADI = "Ayarlar"
 st.set_page_config(page_title="Akıllı Bütçe", layout="wide", page_icon="📈")
 
 # --- GİRİŞ KONTROLÜ ---
@@ -39,6 +39,7 @@ def get_gspread_client():
     client = gspread.authorize(creds)
     return client
 
+# --- VERİ YÜKLEME VE TEMİZLEME ---
 def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
@@ -47,8 +48,22 @@ def veri_yukle():
     if not data:
         return pd.DataFrame(columns=["Tarih", "Ay", "Yıl", "Kategori", "Aciklama", "Tutar", "Tur"])
     df = pd.DataFrame(data)
+    
     if not df.empty and "Tutar" in df.columns:
-        df["Tutar"] = df["Tutar"].astype(str).str.replace(" TL", "").str.replace(" ₺", "").str.replace(".", "").str.replace(",", ".").astype(float)
+        def temizle(x):
+            try:
+                if isinstance(x, (int, float)):
+                    return float(x)
+                x = str(x).replace(" TL", "").replace(" ₺", "").strip()
+                if "." in x and "," not in x:
+                    return float(x)
+                x = x.replace(".", "").replace(",", ".")
+                return float(x)
+            except:
+                return 0.0
+
+        df["Tutar"] = df["Tutar"].apply(temizle)
+        
     return df
 
 def veri_kaydet(yeni_satir_df):
@@ -60,51 +75,33 @@ def veri_kaydet(yeni_satir_df):
     for row in liste:
         worksheet.append_row(row)
 
-# --- YENİ: FİYATLARI SHEET'E KAYDETME VE OKUMA ---
+# --- AYARLAR SEKME FONKSİYONLARI ---
 def piyasa_fiyatlarini_getir_veya_olustur():
-    """
-    Google Sheets'te 'Ayarlar' sekmesi var mı bakar.
-    Yoksa oluşturur ve varsayılan değerleri yazar.
-    Varsa, oradaki kayıtlı fiyatları okur.
-    """
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
-    
     try:
         ws = sh.worksheet(AYARLAR_TAB_ADI)
     except:
-        # Sekme yoksa oluştur
         ws = sh.add_worksheet(title=AYARLAR_TAB_ADI, rows=10, cols=5)
-        # Başlıkları ve varsayılanları yaz
         ws.update('A1', [['Parametre', 'Deger'], ['gram_altin', 6400.00], ['gram_gumus', 80.00]])
         return 6400.00, 80.00
     
-    # Verileri oku
     records = ws.get_all_records()
-    # Listeden sözlüğe çevir ki kolay bulalım
     data_dict = {row['Parametre']: row['Deger'] for row in records}
     
-    # Altın ve Gümüşü çek (Virgül/Nokta temizliği yaparak)
     try:
         saved_gold = float(str(data_dict.get('gram_altin', 6400)).replace(",", "."))
         saved_silver = float(str(data_dict.get('gram_gumus', 80)).replace(",", "."))
     except:
         saved_gold, saved_silver = 6400.00, 80.00
-        
     return saved_gold, saved_silver
 
 def piyasa_fiyatlarini_guncelle(yeni_altin, yeni_gumus):
-    """
-    Google Sheets'teki fiyatları günceller.
-    """
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     ws = sh.worksheet(AYARLAR_TAB_ADI)
-    
-    # A2 ve B2 (Altın), A3 ve B3 (Gümüş) olduğunu varsayarak güncelleme yapıyoruz
-    # Garanti olsun diye hücre hücre güncelliyoruz
-    ws.update_acell('B2', yeni_altin) # Altın Değeri
-    ws.update_acell('B3', yeni_gumus) # Gümüş Değeri
+    ws.update_acell('B2', yeni_altin)
+    ws.update_acell('B3', yeni_gumus)
 
 # --- TOPLU SİLME ---
 def toplu_sil(silinecek_indexler):
@@ -127,32 +124,25 @@ except Exception as e:
     st.error(f"Google Sheets Bağlantı Hatası: {e}")
     st.stop()
 
-# --- SOL MENÜ (KALICI MANUEL PİYASA) ---
+# --- SOL MENÜ ---
 with st.sidebar:
-    st.header("💰 Piyasa Fiyatları")
-    st.info("Güncel piyasa fiyatlarını giriniz.")
+    st.header("💰 Piyasa Fiyatları")  # <-- DEĞİŞİKLİK BURADA
+    st.info("Güncel piyasa fiyatlarını giriniz.") # <-- DEĞİŞİKLİK BURADA
     
-    # 1. Kayıtlı Fiyatları Getir
     try:
         kayitli_altin, kayitli_gumus = piyasa_fiyatlarini_getir_veya_olustur()
     except Exception as e:
-        st.error(f"Ayarlar yüklenemedi: {e}")
         kayitli_altin, kayitli_gumus = 6400.00, 80.00
     
-    # 2. Input Alanları (Varsayılan değer olarak kayıtlı veriyi kullanır)
     gold_val = st.number_input("Gr Altın (₺)", value=kayitli_altin, step=10.0, format="%.2f")
     silver_val = st.number_input("Gr Gümüş (₺)", value=kayitli_gumus, step=1.0, format="%.2f")
     
-    # 3. Kaydet Butonu
     if st.button("Fiyatları Sabitle 💾"):
         with st.spinner("Ayarlar kaydediliyor..."):
             piyasa_fiyatlarini_guncelle(gold_val, silver_val)
         st.success("Fiyatlar güncellendi!")
-        # Sayfayı yenilemeye gerek yok, değerler zaten güncel inputta duruyor
-        # Ama session state'i garantiye alalım
         st.rerun()
 
-    # Session'a kaydet
     st.session_state['piyasa_gold'] = gold_val
     st.session_state['piyasa_silver'] = silver_val
     st.session_state['piyasa_usd'] = 0
@@ -229,39 +219,7 @@ with st.sidebar:
             st.success(f"{len(rows_to_add)} adet kayıt eklendi!")
             st.rerun()
 
-    # --- SABİT GİDER KOPYALAMA ---
-    st.divider()
-    with st.expander("🔄 Geçen Ayın Sabitlerini Kopyala"):
-        if st.button("Kopyala ve Ekle"):
-            if not df.empty:
-                bugun = datetime.today()
-                gecen_ay_tarih = bugun - relativedelta(months=1)
-                gecen_ay_isim = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
-                                 7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}[gecen_ay_tarih.month]
-                
-                sabit_kategoriler = ["Kira", "Fatura", "Aidat", "Eğitim", "İnternet"]
-                
-                kopya_df = df[
-                    (df["Ay"] == gecen_ay_isim) & 
-                    (df["Yıl"] == gecen_ay_tarih.year) & 
-                    (df["Kategori"].isin(sabit_kategoriler))
-                ].copy()
-                
-                if not kopya_df.empty:
-                    kopya_df["Tarih"] = bugun.strftime("%Y-%m-%d")
-                    kopya_df["Ay"] = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
-                          7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}[bugun.month]
-                    kopya_df["Yıl"] = bugun.year
-                    kopya_df["Aciklama"] = kopya_df["Aciklama"] + " (Kopya)"
-                    
-                    with st.spinner('Kopyalanıyor...'):
-                        veri_kaydet(kopya_df)
-                    st.success(f"{len(kopya_df)} adet sabit gider kopyalandı!")
-                    st.rerun()
-                else:
-                    st.warning("Geçen ay uygun sabit gider bulunamadı.")
-
-    # --- GELİŞMİŞ SİLME BÖLÜMÜ ---
+    # --- SİLME BÖLÜMÜ ---
     st.divider()
     if not df.empty:
         with st.expander("🗑️ Kayıt Sil (Akıllı)"):
@@ -428,4 +386,3 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
-
