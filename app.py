@@ -129,8 +129,8 @@ except Exception as e:
 
 # --- SOL MENÜ (KALICI MANUEL PİYASA) ---
 with st.sidebar:
-    st.header("🌍 Piyasa Fiyatları")
-    st.info("Fiyatları bir kez girip sabitleyin, her girişte hatırlanır.")
+    st.header("💰 Piyasa Fiyatları")
+    st.info("Güncel piyasa fiyatlarını giriniz.")
     
     # 1. Kayıtlı Fiyatları Getir
     try:
@@ -428,3 +428,4 @@ if not df.empty:
 
 else:
     st.info("Veritabanı boş.")
+
