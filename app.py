@@ -300,33 +300,43 @@ if not df.empty:
         c_g1, c_g2 = st.columns(2)
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
         if not df_p.empty:
-            # 1. PASTA GRAFİK (Harcama Analizi)
+            # 1. PASTA GRAFİK
             fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Analizi")
-            
-            # Yazıları dilimlerin içine koy
             fig1.update_traces(textposition='inside', textinfo='percent+label')
             
-            # Efsaneyi (Legend) alta al ve ortala
-            fig1.update_layout(legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.2,
-                xanchor="center",
-                x=0.5
-            ))
+            # Alt boşluk ayarı (Overlap'i engeller)
+            fig1.update_layout(
+                legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
+                margin=dict(b=50) # Alt tarafa boşluk ekledik
+            )
 
-            # 2. SÜTUN GRAFİK (Nakit Akış Analizi)
+            # 2. SÜTUN GRAFİK (Nakit Akış Analizi) - RENKLİ
             df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
-            fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Nakit Akış Analizi", text_auto='.2s')
             
-            # Efsaneyi alta al
-            fig2.update_layout(legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.2,
-                xanchor="center",
-                x=0.5
-            ))
+            # --- ÖZEL RENK AYARI ---
+            renk_haritasi = {
+                "Gelir": "#00CC96",   # YEŞİL
+                "Gider": "#EF553B",   # KIRMIZI
+                "Yatırım": "#1F77B4"  # KOYU MAVİ (Varsayılan Plotly Mavisi veya #00008B)
+            }
+            
+            fig2 = px.bar(
+                df_b, 
+                x="Tur", 
+                y="Tutar", 
+                color="Tur", 
+                title="Nakit Akış Analizi", 
+                text_auto='.2s',
+                color_discrete_map=renk_haritasi # Renkleri uygula
+            )
+            
+            # Alt boşluk ve Efsane ayarı
+            fig2.update_layout(
+                xaxis_title=None, # Karmaşayı önlemek için alttaki 'Tur' yazısını kaldır
+                legend_title_text='', # Efsane başlığını kaldır
+                legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
+                margin=dict(b=50)
+            )
 
             # KARANLIK MOD AYARLARI
             if theme_toggle:
@@ -345,7 +355,6 @@ if not df.empty:
     with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
-            # --- PORTFÖY HESAPLAMA ---
             def analyze_investment(row):
                 desc = str(row["Aciklama"])
                 cat = str(row["Kategori"]).lower()
@@ -358,10 +367,7 @@ if not df.empty:
                         qty = float(match.group(1).replace(".", "").replace(",", "."))
                     except: qty = 0.0
                 
-                # Birim Maliyet
                 birim_maliyet = (tutar / qty) if qty > 0 else 0.0
-                
-                # Güncel Değer
                 guncel_deger = tutar 
                 if qty > 0:
                     if "altın" in cat: guncel_deger = qty * g_altin
@@ -378,7 +384,6 @@ if not df.empty:
 
             df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Birim Maliyet", "Tutar", "Güncel", "K/Z"]]
             
-            # Tablo Renklendirme
             def kz_format(val):
                 if pd.isna(val): return "-"
                 prefix = "▲ " if val >= 0 else "▼ "
@@ -386,7 +391,7 @@ if not df.empty:
 
             def kz_color(val):
                 if pd.isna(val): return ""
-                color = '#00CC96' if val >= 0 else '#EF553B' # Yeşil / Kırmızı
+                color = '#00CC96' if val >= 0 else '#EF553B' 
                 return f'color: {color}; font-weight: bold'
 
             st.dataframe(
