@@ -7,7 +7,6 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
 
-# --- 1. AYARLAR VE MODERN TASARIM (CSS) ---
 SHEET_ADI = "Butce_Veritabanı"
 AYARLAR_TAB_ADI = "Ayarlar"
 
@@ -22,18 +21,17 @@ section[data-testid="stSidebar"] { background: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GİRİŞ VE GOOGLE BAĞLANTISI ---
 def check_password():
     if st.session_state.get("password_correct", False): return True
     if "LOGIN_SIFRE" not in st.secrets: return True
-    st.text_input("Lütfen Şifrenizi Girin", type="password", key="password_input", on_change=password_entered)
+    st.text_input("Şifre", type="password", key="password_input", on_change=password_entered)
     return False
 
 def password_entered():
     if st.session_state["password_input"] == st.secrets["LOGIN_SIFRE"]:
         st.session_state["password_correct"] = True
         del st.session_state["password_input"]
-    else: st.error("😕 Şifre Yanlış")
+    else: st.error("😕 Hatalı Şifre")
 
 if not check_password(): st.stop()
 
@@ -77,7 +75,6 @@ def veri_sil_toplu(indexler):
         st.error(f"Hata: {e}")
         return False
 
-# --- VERİLERİ ÇEK ---
 df = veri_yukle()
 
 def piyasa_cek():
@@ -90,7 +87,6 @@ def piyasa_cek():
 
 g_altin, g_gumus = piyasa_cek()
 
-# --- 4. KENAR ÇUBUĞU (İŞLEM EKLEME VE SİLME) ---
 with st.sidebar:
     st.title("➕ Yeni İşlem")
     tarih = st.date_input("Tarih", datetime.today())
@@ -101,7 +97,7 @@ with st.sidebar:
     else: kats = ["Altın", "Gümüş", "Döviz", "Borsa", "Bitcoin"]
     
     kat = st.selectbox("Kategori", kats, key=f"kat_select_{tur}")
-    miktar = st.text_input("Miktar (Örn: 5.5 Gram)") if tur == "Yatırım" else ""
+    miktar = st.text_input("Miktar (Yatırım ise: 5.5)") if tur == "Yatırım" else ""
     aciklama = st.text_input("Açıklama")
     tutar_input = st.text_input("Tutar (Örn: 1500,50)")
     
@@ -128,7 +124,6 @@ with st.sidebar:
             st.success("Kaydedildi!")
             st.rerun()
 
-    # --- SİLME PANELİ ---
     st.divider()
     st.header("🗑️ İşlem Silme")
     yil_options = sorted(df["Yıl"].dropna().unique().astype(int), reverse=True)
@@ -148,14 +143,13 @@ with st.sidebar:
                 if veri_sil_toplu(idx): st.rerun()
             if c2.button("Seri Sil", key="btn_seri_sil"):
                 t_desc = df.loc[idx[0], "Aciklama"]
-                m = re.search(r"(.+?)\s\(\d+/\d+\.Tks\)", str(t_desc))
-                if m:
-                    base = m.group(1).strip()
-                    t_idx = df[df["Aciklama"].str.contains(re.escape(base), na=False)].index
+                match = re.search(r"(.+?)\s*\(\d+/\d+\.?\s*[Tt]ks\)", str(t_desc))
+                if match:
+                    base = match.group(1).strip()
+                    t_idx = df[df["Aciklama"].str.startswith(base, na=False)].index
                     if veri_sil_toplu(t_idx): st.rerun()
-                else: st.warning("Taksitli değil!")
+                else: st.warning("Format Hatası!")
 
-# --- 5. DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
@@ -179,7 +173,7 @@ if not df.empty:
 
     st.divider()
 
-    tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Yatırım Durumu"])
+    tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Portföy"])
 
     with tab1:
         c_g1, c_g2 = st.columns(2)
@@ -196,10 +190,10 @@ if not df.empty:
         if not df_y.empty:
             def calc_safe(row):
                 d, c = str(row["Aciklama"]), str(row["Kategori"]).lower()
-                match = re.search(r'\[([\d\.,]+)', d)
-                if match:
+                m = re.search(r'\[([\d\.,]+)', d)
+                if m:
                     try:
-                        qty = float(match.group(1).replace(".", "").replace(",", "."))
+                        qty = float(m.group(1).replace(".", "").replace(",", "."))
                         if "altın" in c: return qty * g_altin
                         if "gümüş" in c: return qty * g_gumus
                     except: return row["Tutar"]
@@ -210,12 +204,12 @@ if not df.empty:
             df_y["Tutar"] = pd.to_numeric(df_y["Tutar"], errors='coerce').fillna(0)
             df_y["K/Z"] = df_y["Güncel"] - df_y["Tutar"]
             
-            st.write(f"### 💎 {s_ay} {s_yil} Portföy Detayı")
+            st.write(f"### 💎 {s_ay} {s_yil} Yatırım Durumu")
             df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel", "K/Z"]]
             st.dataframe(df_disp.style.format({
                 "Tutar": "{:,.2f} ₺", "Güncel": "{:,.2f} ₺", "K/Z": "{:,.2f} ₺"
             }), use_container_width=True)
-        else: st.info("Bu ayda yatırım kaydı yok.")
+        else: st.info("Veri yok.")
 
     st.divider()
     st.subheader("📋 İşlem Geçmişi")
