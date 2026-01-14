@@ -316,7 +316,7 @@ if not df.empty:
             # --- ÖZEL RENK AYARI ---
             renk_haritasi = {
                 "Gelir": "#00CC96",   # YEŞİL
-                "Gider": "#EF553B",   # KIRMIZI
+                "Gider": "#8B0000",   # KIRMIZI
                 "Yatırım": "#1F77B4"  # KOYU MAVİ (Varsayılan Plotly Mavisi veya #00008B)
             }
             
@@ -326,7 +326,7 @@ if not df.empty:
                 y="Tutar", 
                 color="Tur", 
                 title="Nakit Akış Analizi", 
-                text_auto='.2s',
+                text_auto='.1s',
                 color_discrete_map=renk_haritasi # Renkleri uygula
             )
             
@@ -414,3 +414,4 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
