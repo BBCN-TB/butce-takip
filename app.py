@@ -307,34 +307,53 @@ if not df.empty:
 
     tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Portföy"])
 
-    with tab1:
+   with tab1:
         c_g1, c_g2 = st.columns(2)
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
+        
         if not df_p.empty:
-            # PASTA GRAFİK
+            # 1. PASTA GRAFİK (Harcama Analizi)
             fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Analizi")
-            # SÜTUN GRAFİK
-            df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
-            fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Nakit Akış Analizi")
+            
+            # Yazıları dilimlerin içine koy ve okunur yap
+            fig1.update_traces(textposition='inside', textinfo='percent+label')
+            
+            # Efsaneyi (Legend) alta al ve ortala
+            fig1.update_layout(legend=dict(
+                orientation="h",      # Yatay dizilim
+                yanchor="bottom", 
+                y=-0.2,               # Grafiğin biraz altına it
+                xanchor="center", 
+                x=0.5                 # Tam ortala
+            ))
 
-            # --- KARANLIK MOD İÇİN GRAFİK AYARLARI ---
+            # 2. SÜTUN GRAFİK (Nakit Akış Analizi)
+            df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
+            fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Nakit Akış Analizi", text_auto='.2s')
+            
+            # Efsaneyi (Legend) alta al ve ortala
+            fig2.update_layout(legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5
+            ))
+
+            # --- KARANLIK MOD AYARLARI ---
             if theme_toggle:
                 dark_layout = dict(
-                    paper_bgcolor='rgba(0,0,0,0)', # Dış çerçeve şeffaf (CSS kutusuna uyum sağlar)
-                    plot_bgcolor='rgba(0,0,0,0)',  # Çizim alanı şeffaf
-                    font=dict(color='#E5E7EB'),    # Yazı rengi açık gri
-                    title_font=dict(color='#FAFAFA') # Başlık rengi beyaz
+                    paper_bgcolor='rgba(0,0,0,0)', 
+                    plot_bgcolor='rgba(0,0,0,0)',  
+                    font=dict(color='#E5E7EB'),    
+                    title_font=dict(color='#FAFAFA') 
                 )
                 fig1.update_layout(**dark_layout)
                 fig2.update_layout(**dark_layout)
-            # -----------------------------------------
+            # -----------------------------
 
             c_g1.plotly_chart(fig1, use_container_width=True)
             c_g2.plotly_chart(fig2, use_container_width=True)
-
-    with tab2:
-        df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
-        if not df_y.empty:
             
             # --- PORTFÖY HESAPLAMA ---
             def analyze_investment(row):
@@ -401,5 +420,6 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
 
 
