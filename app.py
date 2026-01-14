@@ -17,7 +17,7 @@ st.set_page_config(page_title="Finans Pro", layout="wide", page_icon="💰")
 theme_toggle = st.sidebar.toggle("🌙 Karanlık Mod", value=True)
 
 if theme_toggle:
-    # --- DARK MODE (GELİŞMİŞ GRAFİK VE TABLO DESTEĞİ) ---
+    # --- DARK MODE ---
     st.markdown("""
     <style>
     /* Ana Arka Plan */
@@ -33,15 +33,10 @@ if theme_toggle:
         border-radius: 12px;
         padding: 15px;
     }
-    /* Metrik Etiketleri */
     div[data-testid="stMetricLabel"] p { color: #9CA3AF !important; font-size: 14px !important; }
-    /* Metrik Değerleri */
     div[data-testid="stMetricValue"] div { color: #FFFFFF !important; font-size: 24px !important; font-weight: bold !important; }
 
-    /* --- YENİ EKLENENLER --- */
-
-    /* 1. GRAFİK KUTULARI (Plotly Chart Containers) */
-    /* Grafikleri metrikler gibi koyu bir kutu içine alır */
+    /* GRAFİK KUTULARI */
     div[data-testid="stPlotlyChart"] {
         background-color: #1F2937;
         border: 1px solid #374151;
@@ -49,18 +44,13 @@ if theme_toggle:
         padding: 10px;
     }
 
-    /* 2. TABLOLAR (Dataframes - İşlem Geçmişi vb.) */
+    /* TABLOLAR */
     div[data-testid="stDataFrame"] {
-        background-color: #1F2937; /* Koyu Zemin */
+        background-color: #1F2937;
         border: 1px solid #374151;
         border-radius: 8px;
     }
-    /* Tablo içi yazı rengini zorla beyaz yap (Okunabilirlik için) */
-    div[data-testid="stDataFrame"] * {
-        color: #E5E7EB !important;
-    }
-    
-    /* ----------------------- */
+    div[data-testid="stDataFrame"] * { color: #E5E7EB !important; }
 
     /* Input Alanları */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
@@ -83,7 +73,7 @@ if theme_toggle:
     </style>
     """, unsafe_allow_html=True)
 else:
-    # --- LIGHT MODE (MAVİ) ---
+    # --- LIGHT MODE ---
     st.markdown("""
     <style>
     .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%); color: black; }
@@ -103,7 +93,6 @@ else:
         border: none; 
     }
     section[data-testid="stSidebar"] { background: #ffffff; }
-    /* Light modda grafik kutularına gölge verelim */
     div[data-testid="stPlotlyChart"] {
         background: white;
         border-radius: 18px;
@@ -225,7 +214,7 @@ with st.sidebar:
     else: kats = ["Altın", "Gümüş", "Döviz", "Borsa", "Bitcoin"]
     
     kat = st.selectbox("Kategori", kats, key=f"kat_select_{tur}")
-    miktar = st.text_input("Miktar (Yatırım ise: 10)") if tur == "Yatırım" else ""
+    miktar = st.text_input("Miktar (Yatırım ise: 5.5)") if tur == "Yatırım" else ""
     aciklama = st.text_input("Açıklama")
     tutar_input = st.text_input("Tutar (Örn: 1500,50)")
     
@@ -307,31 +296,30 @@ if not df.empty:
 
     tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Portföy"])
 
-with tab1:
+    with tab1:
         c_g1, c_g2 = st.columns(2)
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
-        
         if not df_p.empty:
             # 1. PASTA GRAFİK (Harcama Analizi)
             fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Analizi")
             
-            # Yazıları dilimlerin içine koy ve okunur yap
+            # Yazıları dilimlerin içine koy
             fig1.update_traces(textposition='inside', textinfo='percent+label')
             
             # Efsaneyi (Legend) alta al ve ortala
             fig1.update_layout(legend=dict(
-                orientation="h",      # Yatay dizilim
-                yanchor="bottom", 
-                y=-0.2,               # Grafiğin biraz altına it
-                xanchor="center", 
-                x=0.5                 # Tam ortala
+                orientation="h",
+                yanchor="bottom",
+                y=-0.2,
+                xanchor="center",
+                x=0.5
             ))
 
             # 2. SÜTUN GRAFİK (Nakit Akış Analizi)
             df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
             fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Nakit Akış Analizi", text_auto='.2s')
             
-            # Efsaneyi (Legend) alta al ve ortala
+            # Efsaneyi alta al
             fig2.update_layout(legend=dict(
                 orientation="h",
                 yanchor="bottom",
@@ -340,7 +328,7 @@ with tab1:
                 x=0.5
             ))
 
-            # --- KARANLIK MOD AYARLARI ---
+            # KARANLIK MOD AYARLARI
             if theme_toggle:
                 dark_layout = dict(
                     paper_bgcolor='rgba(0,0,0,0)', 
@@ -350,11 +338,13 @@ with tab1:
                 )
                 fig1.update_layout(**dark_layout)
                 fig2.update_layout(**dark_layout)
-            # -----------------------------
 
             c_g1.plotly_chart(fig1, use_container_width=True)
             c_g2.plotly_chart(fig2, use_container_width=True)
-            
+
+    with tab2:
+        df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
+        if not df_y.empty:
             # --- PORTFÖY HESAPLAMA ---
             def analyze_investment(row):
                 desc = str(row["Aciklama"])
@@ -416,11 +406,6 @@ with tab1:
     st.divider()
     st.subheader("📋 İşlem Geçmişi")
     df_f["Tutar"] = pd.to_numeric(df_f["Tutar"], errors='coerce').fillna(0)
-    # İşlem geçmişi tablosu zaten CSS ile koyu yapıldı
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
-
-
-
-
