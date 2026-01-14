@@ -1,127 +1,98 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
+import plotly.express as px # Grafik kütüphanesini import etsek de kullanmayacağız ama hata vermesin diye kalsın
 
-# --- 1. AYARLAR VE MODERN TASARIM ---
+# --- 1. AYARLAR VE TASARIM ---
 SHEET_ADI = "Butce_Veritabanı"
 AYARLAR_TAB_ADI = "Ayarlar"
 
 st.set_page_config(page_title="Finans Pro", layout="wide", page_icon="💰")
 
-# --- 1. AYARLAR VE GELİŞMİŞ TEMA MOTORU ---
-SHEET_ADI = "Butce_Veritabanı"
-AYARLAR_TAB_ADI = "Ayarlar"
-
-# Sidebar'a Toggle Butonu Ekle
-theme_toggle = st.sidebar.toggle("🌙 Karanlık Mod", value=False)
+# Sidebar'a Toggle Butonu
+theme_toggle = st.sidebar.toggle("🌙 Karanlık Mod", value=True)
 
 if theme_toggle:
-    # --- DARK MODE (KARANLIK MOD - GELİŞMİŞ) ---
+    # --- DARK MODE (DÜZELTİLMİŞ) ---
     st.markdown("""
     <style>
-    /* 1. Ana Arka Plan ve Temel Yazı Rengi */
-    .stApp {
-        background-color: #0E1117;
-        color: #FAFAFA;
-    }
+    /* Ana Arka Plan */
+    .stApp { background-color: #0E1117; color: #FAFAFA; }
     
-    /* 2. Sidebar (Yan Menü) */
-    section[data-testid="stSidebar"] {
-        background-color: #262730;
-    }
+    /* Sidebar */
+    section[data-testid="stSidebar"] { background-color: #262730; }
     
-    /* 3. Metrik Kartları (Dashboard Kutuları) */
+    /* METRİK KARTLARI (Koyu Gri Zemin - Beyaz Yazı) */
     div[data-testid="stMetric"] {
-        background-color: #1F2937; /* Koyu Gri */
-        border: 1px solid #374151;  /* İnce Gri Çerçeve */
+        background-color: #1F2937;
+        border: 1px solid #374151;
+        border-radius: 12px;
         padding: 15px;
-        border-radius: 10px;
-        color: white;
     }
-    
-    /* 4. Tüm Başlıklar (H1, H2, H3) ve Metinler */
-    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
-        color: #E5E7EB !important; /* Kırık Beyaz */
+    /* Metrik Etiketleri (Gelir, Gider vs.) */
+    div[data-testid="stMetricLabel"] p {
+        color: #9CA3AF !important; /* Açık Gri */
+        font-size: 14px !important;
     }
-    
-    /* 5. Input Alanları ve Selectbox (Giriş Kutuları) */
-    .stTextInput > div > div > input, 
-    .stSelectbox > div > div > div, 
-    .stNumberInput > div > div > input {
-        color: white !important;
-        background-color: #374151 !important; /* Kutu içi koyu gri */
+    /* Metrik Değerleri (Rakamlar) */
+    div[data-testid="stMetricValue"] div {
+        color: #FFFFFF !important; /* Tam Beyaz */
+        font-size: 24px !important;
+        font-weight: bold !important;
     }
-    
-    /* 6. Tablolar (DataFrame) */
+
+    /* Tablolar */
     div[data-testid="stDataFrame"] {
-        background-color: #393E46;
-        border: 1px solid 948979;
+        background-color: #1F2937;
         border-radius: 8px;
     }
-    
-    /* 7. Butonlar (Karanlık Modda Gri-Siyah) */
-    .stButton > button {
-        background: linear-gradient(to right, #2c3e50, #000000);
-        color: white;
-        border: 1px solid #4b5563;
-        border-radius: 12px;
+
+    /* Input Alanları */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        color: white !important;
+        background-color: #374151 !important;
     }
     
-    /* 8. Sekmeler (Tabs) */
-    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
-        background-color: #374151 !important;
-        color: white !important;
+    /* Genel Yazılar */
+    h1, h2, h3, p { color: #E5E7EB !important; }
+    
+    /* Butonlar */
+    .stButton > button {
+        background: linear-gradient(to right, #374151, #111827);
+        color: white;
+        border: 1px solid #4B5563;
     }
     </style>
     """, unsafe_allow_html=True)
-
 else:
-    # --- LIGHT MODE (AÇIK MOD - SENİN TASARIMIN) ---
+    # --- LIGHT MODE (MAVİ) ---
     st.markdown("""
     <style>
-    /* Açık Arka Plan */
-    .stApp { 
-        background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%); 
-        color: #000000;
-        font-family: sans-serif; 
-    }
-    
-    /* Metrik Kartları */
+    .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%); color: black; }
     div[data-testid="stMetric"] { 
         background: white; 
         padding: 18px; 
         border-radius: 18px; 
-        box-shadow: 0 8px 20px rgba(0,0,0,0.06); 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
         text-align: center; 
         border: 1px solid #eef2f6; 
     }
-    
-    /* Butonlar (Mavi) */
     .stButton > button { 
         border-radius: 14px; 
         font-weight: 600; 
         background: linear-gradient(to right, #4facfe, #00f2fe); 
         color: white; 
         border: none; 
-        width: 100%; 
     }
-    
-    /* Sidebar */
     section[data-testid="stSidebar"] { background: #ffffff; }
-    
-    /* Başlıklar */
-    h1, h2, h3, h4, h5, h6, p, label {
-        color: #1f2937;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. GİRİŞ VE BAĞLANTI ---
+# --- 2. FONKSİYONLAR ---
 def check_password():
     if st.session_state.get("password_correct", False): return True
     if "LOGIN_SIFRE" not in st.secrets: return True
@@ -178,7 +149,6 @@ def veri_sil_toplu(indexler):
 
 df = veri_yukle()
 
-# --- 3. PİYASA İŞLEMLERİ ---
 def piyasa_cek():
     try:
         sh = get_client().open(SHEET_ADI).worksheet(AYARLAR_TAB_ADI)
@@ -210,12 +180,12 @@ def piyasa_guncelle(yeni_altin, yeni_gumus):
 
 g_altin, g_gumus = piyasa_cek()
 
-# --- 4. SİDEBAR ---
+# --- 3. SIDEBAR ---
 with st.sidebar:
     st.header("💰 Piyasalar")
     col_p1, col_p2 = st.columns(2)
-    yeni_altin_val = col_p1.number_input("Gram Altın", value=g_altin, step=10.0)
-    yeni_gumus_val = col_p2.number_input("Gram Gümüş", value=g_gumus, step=1.0)
+    yeni_altin_val = col_p1.number_input("Gr Altın", value=g_altin, step=10.0)
+    yeni_gumus_val = col_p2.number_input("Gr Gümüş", value=g_gumus, step=1.0)
     
     if st.button("Fiyatları Güncelle 🔄"):
         if piyasa_guncelle(yeni_altin_val, yeni_gumus_val):
@@ -224,7 +194,7 @@ with st.sidebar:
     
     st.divider()
 
-    st.title("➕ Yeni İşlem")
+    st.subheader("➕ Yeni İşlem")
     tarih = st.date_input("Tarih", datetime.today())
     tur = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"], key="main_tur")
     
@@ -243,7 +213,7 @@ with st.sidebar:
         taksitli = st.checkbox("Taksitli mi?")
         if taksitli: t_sayi = st.slider("Taksit", 2, 12, 3)
 
-    if st.button("KAYDET 💾"):
+    if st.button("KAYDET 💾", use_container_width=True):
         if tutar_input:
             tutar_f = float(tutar_input.replace(".", "").replace(",", "."))
             ay_map = {1:"Ocak",2:"Şubat",3:"Mart",4:"Nisan",5:"Mayıs",6:"Haziran",7:"Temmuz",8:"Ağustos",9:"Eylül",10:"Ekim",11:"Kasım",12:"Aralık"}
@@ -261,7 +231,7 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.header("🗑️ İşlem Silme")
+    st.subheader("🗑️ İşlem Silme")
     yil_options = sorted(df["Yıl"].dropna().unique().astype(int), reverse=True)
     f_yil = st.selectbox("Yıl Seç", yil_options, key="sil_yil")
     f_ay = st.selectbox("Ay Seç", list(df["Ay"].unique()), key="sil_ay")
@@ -289,7 +259,7 @@ with st.sidebar:
                     t_idx = df[df["Aciklama"] == base].index
                     if veri_sil_toplu(t_idx): st.rerun()
 
-# --- 5. DASHBOARD ---
+# --- 4. ANA EKRAN ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
@@ -329,13 +299,12 @@ if not df.empty:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
             
-            # --- DETAYLI HESAPLAMA ---
+            # --- PORTFÖY HESAPLAMA ---
             def analyze_investment(row):
                 desc = str(row["Aciklama"])
                 cat = str(row["Kategori"]).lower()
                 tutar = float(row["Tutar"]) if row["Tutar"] else 0.0
                 
-                # Miktarı (Gram/Adet) Bul
                 qty = 0.0
                 match = re.search(r'\[([\d\.,]+)', desc)
                 if match:
@@ -343,33 +312,27 @@ if not df.empty:
                         qty = float(match.group(1).replace(".", "").replace(",", "."))
                     except: qty = 0.0
                 
-                # 1. Birim Maliyet Hesapla (Toplam Tutar / Adet)
-                # Eğer adet varsa hesapla, yoksa 0
+                # Birim Maliyet
                 birim_maliyet = (tutar / qty) if qty > 0 else 0.0
                 
-                # 2. Güncel Değer Hesapla
-                guncel_deger = tutar # Varsayılan olarak değişmez
+                # Güncel Değer
+                guncel_deger = tutar 
                 if qty > 0:
                     if "altın" in cat: guncel_deger = qty * g_altin
                     elif "gümüş" in cat: guncel_deger = qty * g_gumus
                 
-                # Sonuçları döndür
                 return pd.Series([birim_maliyet, guncel_deger])
 
-            # Hesaplamaları Uygula
             df_calc = df_y.apply(analyze_investment, axis=1)
             df_y["Birim Maliyet"] = df_calc[0]
             df_y["Güncel"] = df_calc[1]
-            
-            # Kâr Zarar Hesapla
             df_y["K/Z"] = df_y["Güncel"] - df_y["Tutar"]
             
             st.write(f"### 💎 {s_ay} {s_yil} Portföy Performansı")
 
-            # Gösterilecek Sütunlar
             df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Birim Maliyet", "Tutar", "Güncel", "K/Z"]]
             
-            # Tablo Formatlama
+            # Tablo Renklendirme
             def kz_format(val):
                 if pd.isna(val): return "-"
                 prefix = "▲ " if val >= 0 else "▼ "
@@ -377,13 +340,13 @@ if not df.empty:
 
             def kz_color(val):
                 if pd.isna(val): return ""
-                color = '#00CC96' if val >= 0 else '#EF553B'
+                color = '#00CC96' if val >= 0 else '#EF553B' # Yeşil / Kırmızı
                 return f'color: {color}; font-weight: bold'
 
             st.dataframe(
                 df_disp.style
                 .format({
-                    "Birim Maliyet": "{:,.2f} ₺", # Yeni sütun formatı
+                    "Birim Maliyet": "{:,.2f} ₺",
                     "Tutar": "{:,.2f} ₺", 
                     "Güncel": "{:,.2f} ₺",
                     "K/Z": kz_format
@@ -400,6 +363,3 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
-
-
-
