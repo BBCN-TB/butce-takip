@@ -224,7 +224,7 @@ if not df.empty:
             fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Denge")
             c_g2.plotly_chart(fig2, use_container_width=True)
 
-    with tab2:
+   with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
             # 1. HESAPLAMA (Güvenli Mod)
@@ -244,29 +244,32 @@ if not df.empty:
             df_y["Tutar"] = pd.to_numeric(df_y["Tutar"], errors='coerce').fillna(0)
             df_y["K/Z"] = df_y["Güncel"] - df_y["Tutar"]
             
-            # Renklendirme için durum sütunu (Grafik İçin)
+            # Renklendirme için durum sütunu
             df_y["Durum"] = df_y["K/Z"].apply(lambda x: "Kâr" if x >= 0 else "Zarar")
 
             st.write(f"### 💎 {s_ay} {s_yil} Portföy Performansı")
 
-            # 2. GRAFİK: Kâr/Zarar Çubukları (Yeşil/Kırmızı)
+            # 2. GRAFİK: Daha Kompakt Kâr/Zarar Çubukları
             fig_kz = px.bar(
                 df_y, 
                 x="Aciklama", 
                 y="K/Z", 
                 color="Durum",
-                color_discrete_map={"Kâr": "#00CC96", "Zarar": "#EF553B"}, # Yeşil ve Kırmızı Tonları
-                title="Yatırım Bazlı Kâr/Zarar Durumu",
-                text_auto='.2s'
+                color_discrete_map={"Kâr": "#00CC96", "Zarar": "#EF553B"},
+                title="Kâr/Zarar Özeti",
+                text_auto='.2s',
+                height=350 # <-- EKLENDİ: Yüksekliği 350 piksel ile sınırladık (daha kısa)
             )
+            # Grafiğin kenar boşluklarını daraltarak daha derli toplu göster
+            fig_kz.update_layout(margin=dict(l=20, r=20, t=40, b=20))
+            
             st.plotly_chart(fig_kz, use_container_width=True)
 
             # 3. TABLO: Rakamları Renklendirme
             df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel", "K/Z"]]
             
-            # Pandas Styler fonksiyonu
             def renkli_kz(val):
-                color = '#00CC96' if val >= 0 else '#EF553B' # Yeşil : Kırmızı
+                color = '#00CC96' if val >= 0 else '#EF553B'
                 return f'color: {color}; font-weight: bold'
 
             st.dataframe(
@@ -276,7 +279,7 @@ if not df.empty:
                     "Güncel": "{:,.2f} ₺", 
                     "K/Z": "{:,.2f} ₺"
                 })
-                .map(renkli_kz, subset=['K/Z']), # Sadece K/Z sütununu boyar
+                .map(renkli_kz, subset=['K/Z']),
                 use_container_width=True
             )
         else: 
