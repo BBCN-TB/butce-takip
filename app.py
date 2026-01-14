@@ -142,13 +142,16 @@ with st.sidebar:
             if c1.button("Tek Sil", key="btn_tek_sil"):
                 if veri_sil_toplu(idx): st.rerun()
             if c2.button("Seri Sil", key="btn_seri_sil"):
-                t_desc = df.loc[idx[0], "Aciklama"]
-                match = re.search(r"(.+?)\s*\(\d+/\d+\.?\s*[Tt]ks\)", str(t_desc))
+                t_desc = str(df.loc[idx[0], "Aciklama"])
+                match = re.search(r"(.+?)\s*\(\d+/\d+.*?\)", t_desc)
                 if match:
                     base = match.group(1).strip()
-                    t_idx = df[df["Aciklama"].str.startswith(base, na=False)].index
+                    t_idx = df[df["Aciklama"].str.contains(re.escape(base), na=False)].index
                     if veri_sil_toplu(t_idx): st.rerun()
-                else: st.warning("Format Hatası!")
+                else:
+                    base = t_desc.strip()
+                    t_idx = df[df["Aciklama"] == base].index
+                    if veri_sil_toplu(t_idx): st.rerun()
 
 st.title("📊 Akıllı Bütçe Yönetimi")
 
