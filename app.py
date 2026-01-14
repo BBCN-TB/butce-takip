@@ -388,4 +388,3 @@ if not df.empty:
     )
 else:
     st.info("Veri yok.")
-
