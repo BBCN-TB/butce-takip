@@ -15,64 +15,10 @@ st.set_page_config(page_title="Finans Pro", layout="wide", page_icon="💰")
 
 st.markdown("""
 <style>
-/* Genel Arka Plan */
-.stApp {
-    background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-/* Metrik Kartları (Dashboard) */
-div[data-testid="stMetric"] {
-    background: white;
-    padding: 18px;
-    border-radius: 18px;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-    text-align: center;
-    border: 1px solid #eef2f6;
-}
-
-/* Tablar (Sekmeler) Tasarımı */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 24px;
-}
-.stTabs [data-baseweb="tab"] {
-    height: 50px;
-    white-space: pre-wrap;
-    background-color: transparent;
-    border-radius: 4px;
-    font-weight: 600;
-}
-
-/* Butonlar */
-.stButton > button {
-    border-radius: 14px;
-    padding: 0.6rem 1rem;
-    font-weight: 600;
-    background: linear-gradient(to right, #4facfe, #00f2fe);
-    color: white;
-    border: none;
-    transition: all 0.3s ease;
-}
-.stButton > button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
-}
-
-/* Kenar Çubuğu (Sidebar) */
-section[data-testid="stSidebar"] {
-    background: #ffffff;
-    border-right: 1px solid #eee;
-}
-
-/* Mobil uyum iyileştirmeleri */
-@media (max-width: 768px) {
-    .block-container {
-        padding: 1rem !important;
-    }
-    div[data-testid="stMetric"] {
-        margin-bottom: 10px;
-    }
-}
+.stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%); font-family: sans-serif; }
+div[data-testid="stMetric"] { background: white; padding: 18px; border-radius: 18px; box-shadow: 0 8px 20px rgba(0,0,0,0.06); text-align: center; }
+.stButton > button { border-radius: 14px; padding: 0.6rem 1rem; font-weight: 600; background: linear-gradient(to right, #4facfe, #00f2fe); color: white; border: none; }
+section[data-testid="stSidebar"] { background: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,14 +55,14 @@ def veri_yukle():
                 return float(x_str) if x_str else 0.0
             except: return 0.0
         df["Tutar"] = df["Tutar"].apply(temizle)
+        # Yıl kolonunu sayıya çevir
+        df["Yıl"] = pd.to_numeric(df["Yıl"], errors='coerce')
         return df
-    except Exception as e:
-        st.error(f"Veri çekme hatası: {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
-# --- 3. ANA MANTIK VE PİYASA VERİSİ ---
 df = veri_yukle()
 
+# --- 3. PİYASA VERİSİ ---
 def piyasa_cek():
     try:
         sh = get_client().open(SHEET_ADI).worksheet(AYARLAR_TAB_ADI)
@@ -130,26 +76,35 @@ g_altin, g_gumus = piyasa_cek()
 # --- 4. KENAR ÇUBUĞU (İŞLEM EKLEME) ---
 with st.sidebar:
     st.title("➕ Yeni İşlem")
-    with st.form("ekle_form", clear_on_submit=True):
-        tarih = st.date_input("Tarih", datetime.today())
-        tur = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"])
-        
-        if tur == "Gider": kats = ["Mutfak", "Kredi Kartı", "Kira", "Fatura", "Pazar", "Ulaşım", "Eğitim", "Diğer"]
-        elif tur == "Gelir": kats = ["Maaş", "Ek Gelir", "Borç Alacak"]
-        else: kats = ["Altın", "Gümüş", "Döviz", "Borsa", "Bitcoin"]
-        
-        kat = st.selectbox("Kategori", kats)
-        miktar = st.text_input("Miktar (Yatırım ise: 5.5)") if tur == "Yatırım" else ""
-        aciklama = st.text_input("Açıklama")
-        tutar_input = st.text_input("Tutar (1500,50)")
-        
-        taksitli = False
-        t_sayi = 1
-        if tur == "Gider":
-            taksitli = st.checkbox("Taksitli mi?")
-            if taksitli: t_sayi = st.slider("Taksit", 2, 12, 3)
+    
+    tarih = st.date_input("Tarih", datetime.today())
+    tur = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"], key="main_tur")
+    
+    # Kategori Listesini Dinamikleştirme
+    if tur == "Gider": 
+        kats = ["Mutfak", "Kredi Kartı", "Kira", "Fatura", "Pazar", "Ulaşım", "Eğitim", "Diğer"]
+    elif tur == "Gelir": 
+        kats = ["Maaş", "Ek Gelir", "Borç Alacak"]
+    else: 
+        kats = ["Altın", "Gümüş", "Döviz", "Borsa", "Bitcoin"]
+    
+    # HATA DÜZELTME: Tür değişince kategoriyi sıfırlamak için key'e 'tur' ekledik
+    kat = st.selectbox("Kategori", kats, key=f"kat_select_{tur}")
+    
+    miktar = st.text_input("Miktar (Örn: 5.5 Gram)") if tur == "Yatırım" else ""
+    aciklama = st.text_input("Açıklama")
+    tutar_input = st.text_input("Tutar (Örn: 1500,50)")
+    
+    taksitli = False
+    t_sayi = 1
+    if tur == "Gider":
+        taksitli = st.checkbox("Taksitli mi?")
+        if taksitli: t_sayi = st.slider("Taksit", 2, 12, 3)
 
-        if st.form_submit_button("KAYDET"):
+    if st.button("KAYDET 💾"):
+        if not tutar_input:
+            st.error("Lütfen bir tutar girin!")
+        else:
             tutar_f = float(tutar_input.replace(".", "").replace(",", "."))
             ay_map = {1:"Ocak",2:"Şubat",3:"Mart",4:"Nisan",5:"Mayıs",6:"Haziran",7:"Temmuz",8:"Ağustos",9:"Eylül",10:"Ekim",11:"Kasım",12:"Aralık"}
             
@@ -158,51 +113,60 @@ with st.sidebar:
                 pay = tutar_f / t_sayi
                 for i in range(t_sayi):
                     d = tarih + relativedelta(months=i)
-                    rows.append([str(d), ay_map[d.month], d.year, kat, f"{aciklama} ({i+1}/{t_sayi}.Tks)", str(pay).replace(".", ","), tur])
+                    rows.append([str(d.strftime("%Y-%m-%d")), ay_map[d.month], d.year, kat, f"{aciklama} ({i+1}/{t_sayi}.Tks)", str(round(pay,2)).replace(".", ","), tur])
             else:
                 desc = f"[{miktar}] {aciklama}" if miktar else aciklama
-                rows.append([str(tarih), ay_map[tarih.month], tarih.year, kat, desc, str(tutar_f).replace(".", ","), tur])
+                rows.append([str(tarih.strftime("%Y-%m-%d")), ay_map[tarih.month], tarih.year, kat, desc, str(tutar_f).replace(".", ","), tur])
             
             get_client().open(SHEET_ADI).sheet1.append_rows(rows, value_input_option='USER_ENTERED')
-            st.success("İşlem Başarılı!")
+            st.success("Kaydedildi!")
             st.rerun()
 
-# --- 5. DASHBOARD VE ANALİZ ---
-st.header("💎 Finansal Kontrol Paneli")
+# --- 5. DASHBOARD ---
+st.title("📊 Finansal Kontrol Paneli")
 
 if not df.empty:
-    # Filtreler (Mobil uyumlu yan yana)
     f1, f2 = st.columns(2)
-    s_yil = f1.selectbox("Yıl", sorted(df["Yıl"].unique(), reverse=True))
+    yil_listesi = sorted(df["Yıl"].dropna().unique().astype(int), reverse=True)
+    s_yil = f1.selectbox("Yıl", yil_listesi)
     s_ay = f2.selectbox("Ay", ["Tümü"] + list(df["Ay"].unique()))
     
     df_f = df[df["Yıl"] == s_yil]
     if s_ay != "Tümü": df_f = df_f[df_f["Ay"] == s_ay]
 
-    # Metrik Kartları
+    # Metrikler
     gelir = df_f[df_f["Tur"] == "Gelir"]["Tutar"].sum()
     gider = df_f[df_f["Tur"] == "Gider"]["Tutar"].sum()
     yatirim = df_f[df_f["Tur"] == "Yatırım"]["Tutar"].sum()
-    kalan = gelir - gider - yatirim
 
-    m1, m2, m3, m4 = st.columns([1,1,1,1])
-    m1.metric("Toplam Gelir", f"{gelir:,.2f} ₺")
-    m2.metric("Toplam Gider", f"{gider:,.2f} ₺")
-    m3.metric("Yatırım Maliyeti", f"{yatirim:,.2f} ₺")
-    m4.metric("Kalan Nakit", f"{kalan:,.2f} ₺")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Gelir", f"{gelir:,.2f} ₺")
+    m2.metric("Gider", f"{gider:,.2f} ₺")
+    m3.metric("Yatırım", f"{yatirim:,.2f} ₺")
+    m4.metric("Kalan", f"{(gelir - gider - yatirim):,.2f} ₺")
 
     st.divider()
 
-    # --- TABLAR: ANALİZ VE PORTFÖY ---
-    tab1, tab2 = st.tabs(["📉 Harcama Dağılımı", "💰 Yatırım Portföyü (Kâr/Zarar)"])
+    # --- TABLAR ---
+    tab1, tab2 = st.tabs(["📉 Harcama Grafikleri", "💰 Portföy Kâr/Zarar"])
 
     with tab1:
-        if not df_f[df_f["Tur"] != "Gelir"].empty:
-            fig = px.pie(df_f[df_f["Tur"] != "Gelir"], values="Tutar", names="Kategori", hole=0.5, color_discrete_sequence=px.colors.qualitative.Pastel)
-            st.plotly_chart(fig, use_container_width=True)
-        else: st.info("Bu ay için harcama verisi yok.")
+        c_g1, c_g2 = st.columns(2)
+        # Sadece Gider ve Yatırım içeren pasta grafiği
+        df_pie = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
+        if not df_pie.empty:
+            fig1 = px.pie(df_pie, values="Tutar", names="Kategori", hole=0.4, title="Harcama Dağılımı")
+            c_g1.plotly_chart(fig1, use_container_width=True)
+            
+            # Tür bazlı bar grafiği
+            df_bar = df_f.groupby("Tur")["Tutar"].sum().reset_index()
+            fig2 = px.bar(df_bar, x="Tur", y="Tutar", color="Tur", title="Bütçe Dengesi")
+            c_g2.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("Gösterilecek grafik verisi yok.")
 
     with tab2:
+        # SADECE YATIRIMLARI FİLTRELE
         df_y = df[df["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
             def portfoy_hesap(row):
@@ -215,19 +179,17 @@ if not df.empty:
                 return row["Tutar"]
             
             df_y["Güncel Değer"] = df_y.apply(portfoy_hesap, axis=1)
-            df_y["Net Kâr/Zarar"] = df_y["Güncel Değer"] - df_y["Tutar"]
+            df_y["Kâr/Zarar"] = df_y["Güncel Değer"] - df_y["Tutar"]
             
-            k1, k2 = st.columns(2)
-            k1.metric("Portföy Güncel Değer", f"{df_y['Güncel Değer'].sum():,.2f} ₺")
-            k2.metric("Toplam Kâr/Zarar", f"{df_y['Net Kâr/Zarar'].sum():,.2f} ₺", delta=f"{df_y['Net Kâr/Zarar'].sum():,.2f}")
-            
-            st.dataframe(df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel Değer", "Net Kâr/Zarar"]].style.format("{:,.2f} ₺"), use_container_width=True)
-        else: st.info("Yatırım kaydı bulunamadı.")
+            st.write("### 💎 Yatırım Durumu")
+            st.dataframe(df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel Değer", "Kâr/Zarar"]].style.format("{:,.2f} ₺"), use_container_width=True)
+        else:
+            st.info("Henüz yatırım kaydı yok.")
 
-    # --- 6. TÜM İŞLEMLER (EN ALTTA, BAĞIMSIZ) ---
+    # --- TÜM İŞLEMLER ---
     st.divider()
     st.subheader("📋 Tüm İşlem Geçmişi")
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 
 else:
-    st.info("Veritabanında henüz işlem bulunmuyor.")
+    st.info("Veri yok.")
