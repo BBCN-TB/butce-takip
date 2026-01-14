@@ -312,7 +312,7 @@ if not df.empty:
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
         if not df_p.empty:
             # PASTA GRAFİK
-            fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Dağılım")
+            fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Analizi")
             # SÜTUN GRAFİK
             df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
             fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Denge")
@@ -401,3 +401,4 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
