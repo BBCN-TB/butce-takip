@@ -13,55 +13,85 @@ AYARLAR_TAB_ADI = "Ayarlar"
 
 st.set_page_config(page_title="Finans Pro", layout="wide", page_icon="💰")
 
-# --- 1. AYARLAR VE TASARIM (DARK MODE DESTEKLİ) ---
+# --- 1. AYARLAR VE GELİŞMİŞ TEMA MOTORU ---
 SHEET_ADI = "Butce_Veritabanı"
 AYARLAR_TAB_ADI = "Ayarlar"
 
-# Sidebar'a Toggle Butonu Ekle (En üste koyuyoruz ki hemen görünsün)
+# Sidebar'a Toggle Butonu Ekle
 theme_toggle = st.sidebar.toggle("🌙 Karanlık Mod", value=False)
 
-# Seçime Göre Tasarım Belirle
 if theme_toggle:
-    # --- DARK MODE CSS ---
+    # --- DARK MODE (KARANLIK MOD - GELİŞMİŞ) ---
     st.markdown("""
     <style>
-    /* Koyu Arka Plan */
-    .stApp { background: #0E1117; color: #FAFAFA; font-family: sans-serif; }
-    
-    /* Metrik Kartları (Koyu) */
-    div[data-testid="stMetric"] { 
-        background: #262730; 
-        padding: 18px; 
-        border-radius: 18px; 
-        text-align: center; 
-        border: 1px solid #41444C; 
+    /* 1. Ana Arka Plan ve Temel Yazı Rengi */
+    .stApp {
+        background-color: #0E1117;
+        color: #FAFAFA;
     }
     
-    /* Sidebar (Koyu) */
-    section[data-testid="stSidebar"] { background: #262730; }
+    /* 2. Sidebar (Yan Menü) */
+    section[data-testid="stSidebar"] {
+        background-color: #262730;
+    }
     
-    /* Tabloların Okunurluğu İçin */
-    div[data-testid="stDataFrame"] { background-color: #262730; }
+    /* 3. Metrik Kartları (Dashboard Kutuları) */
+    div[data-testid="stMetric"] {
+        background-color: #1F2937; /* Koyu Gri */
+        border: 1px solid #374151;  /* İnce Gri Çerçeve */
+        padding: 15px;
+        border-radius: 10px;
+        color: white;
+    }
     
-    /* Butonlar (Daha Koyu Gradyan) */
-    .stButton > button { 
-        border-radius: 14px; 
-        font-weight: 600; 
-        background: linear-gradient(to right, #434343, #000000); 
-        color: white; 
-        border: 1px solid #555; 
-        width: 100%; 
+    /* 4. Tüm Başlıklar (H1, H2, H3) ve Metinler */
+    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown {
+        color: #E5E7EB !important; /* Kırık Beyaz */
+    }
+    
+    /* 5. Input Alanları ve Selectbox (Giriş Kutuları) */
+    .stTextInput > div > div > input, 
+    .stSelectbox > div > div > div, 
+    .stNumberInput > div > div > input {
+        color: white !important;
+        background-color: #374151 !important; /* Kutu içi koyu gri */
+    }
+    
+    /* 6. Tablolar (DataFrame) */
+    div[data-testid="stDataFrame"] {
+        background-color: #111827;
+        border: 1px solid #374151;
+        border-radius: 8px;
+    }
+    
+    /* 7. Butonlar (Karanlık Modda Gri-Siyah) */
+    .stButton > button {
+        background: linear-gradient(to right, #2c3e50, #000000);
+        color: white;
+        border: 1px solid #4b5563;
+        border-radius: 12px;
+    }
+    
+    /* 8. Sekmeler (Tabs) */
+    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
+        background-color: #374151 !important;
+        color: white !important;
     }
     </style>
     """, unsafe_allow_html=True)
+
 else:
-    # --- LIGHT MODE CSS (Senin Orijinal Tasarımın) ---
+    # --- LIGHT MODE (AÇIK MOD - SENİN TASARIMIN) ---
     st.markdown("""
     <style>
     /* Açık Arka Plan */
-    .stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%); font-family: sans-serif; }
+    .stApp { 
+        background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%); 
+        color: #000000;
+        font-family: sans-serif; 
+    }
     
-    /* Metrik Kartları (Beyaz) */
+    /* Metrik Kartları */
     div[data-testid="stMetric"] { 
         background: white; 
         padding: 18px; 
@@ -71,7 +101,7 @@ else:
         border: 1px solid #eef2f6; 
     }
     
-    /* Butonlar (Mavi Gradyan) */
+    /* Butonlar (Mavi) */
     .stButton > button { 
         border-radius: 14px; 
         font-weight: 600; 
@@ -81,8 +111,13 @@ else:
         width: 100%; 
     }
     
-    /* Sidebar (Beyaz) */
+    /* Sidebar */
     section[data-testid="stSidebar"] { background: #ffffff; }
+    
+    /* Başlıklar */
+    h1, h2, h3, h4, h5, h6, p, label {
+        color: #1f2937;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -365,4 +400,5 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
 
