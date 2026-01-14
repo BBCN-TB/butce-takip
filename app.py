@@ -44,8 +44,6 @@ def veri_yukle():
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
-    
-    # Tüm verileri string olarak çekip kendimiz işliyoruz (En garantisi)
     tum_veriler = worksheet.get_all_values()
     
     if not tum_veriler or len(tum_veriler) < 2:
@@ -53,36 +51,24 @@ def veri_yukle():
     
     header = tum_veriler[0]
     rows = tum_veriler[1:]
-    
     df = pd.DataFrame(rows, columns=header)
     
     if not df.empty and "Tutar" in df.columns:
         def temizle(x):
             try:
-                if isinstance(x, (int, float)):
-                    return float(x)
-                
-                # Metin temizliği
+                if isinstance(x, (int, float)): return float(x)
                 x_str = str(x).strip().replace("₺", "").replace("TL", "").strip()
                 if not x_str: return 0.0
-                
-                # 1.000,50 formatı (TR)
                 if "," in x_str:
-                    x_str = x_str.replace(".", "") # Binlik noktayı sil
-                    x_str = x_str.replace(",", ".") # Virgülü nokta yap
+                    x_str = x_str.replace(".", "").replace(",", ".")
                     return float(x_str)
-                
-                # 1000.50 formatı (Python)
                 elif "." in x_str:
-                     try: return float(x_str)
-                     except: return float(x_str.replace(".", "")) # Belki binlik noktasıdır
-                
+                    try: return float(x_str)
+                    except: return float(x_str.replace(".", ""))
                 return float(x_str)
             except:
                 return 0.0
-        
         df["Tutar"] = df["Tutar"].apply(temizle)
-        
     return df
 
 # --- VERİ KAYDETME ---
@@ -90,7 +76,6 @@ def veri_kaydet_liste(satirlar_listesi):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
-    # USER_ENTERED: "1963,33" verisini sayıya çevirir
     worksheet.append_rows(satirlar_listesi, value_input_option='USER_ENTERED')
 
 # --- TOPLU SİLME ---
@@ -98,17 +83,13 @@ def toplu_sil(silinecek_indexler):
     client = get_gspread_client()
     sh = client.open(SHEET_ADI)
     worksheet = sh.sheet1
-    
     tum_veriler = worksheet.get_all_values()
     header = tum_veriler[0]
     rows = tum_veriler[1:]
     df_mevcut = pd.DataFrame(rows, columns=header)
-    
     df_yeni = df_mevcut.drop(index=silinecek_indexler)
-    
     worksheet.clear()
     worksheet.append_row(header)
-    
     if not df_yeni.empty:
         values = df_yeni.astype(str).values.tolist()
         worksheet.append_rows(values, value_input_option='USER_ENTERED')
@@ -123,15 +104,11 @@ def piyasa_fiyatlarini_getir_veya_olustur():
         ws = sh.add_worksheet(title=AYARLAR_TAB_ADI, rows=10, cols=5)
         ws.update('A1', [['Parametre', 'Deger'], ['gram_altin', 6400.00], ['gram_gumus', 80.00]])
         return 6400.00, 80.00
-    
     records = ws.get_all_records()
     data_dict = {row['Parametre']: row['Deger'] for row in records}
-    
     try:
-        gold_str = str(data_dict.get('gram_altin', 6400)).replace(",", ".")
-        saved_gold = float(gold_str)
-        silver_str = str(data_dict.get('gram_gumus', 80)).replace(",", ".")
-        saved_silver = float(silver_str)
+        saved_gold = float(str(data_dict.get('gram_altin', 6400)).replace(",", "."))
+        saved_silver = float(str(data_dict.get('gram_gumus', 80)).replace(",", "."))
     except:
         saved_gold, saved_silver = 6400.00, 80.00
     return saved_gold, saved_silver
@@ -153,149 +130,65 @@ except Exception as e:
 # --- SOL MENÜ ---
 with st.sidebar:
     st.header("💰 Piyasa Fiyatları")
-    st.info("Güncel piyasa fiyatlarını giriniz.")
-    
-    try:
-        kayitli_altin, kayitli_gumus = piyasa_fiyatlarini_getir_veya_olustur()
-    except:
-        kayitli_altin, kayitli_gumus = 6400.00, 80.00
-    
-    gold_val = st.number_input("Gr Altın (₺)", value=kayitli_altin, step=10.0, format="%.2f")
-    silver_val = st.number_input("Gr Gümüş (₺)", value=kayitli_gumus, step=1.0, format="%.2f")
+    kayitli_altin, kayitli_gumus = piyasa_fiyatlarini_getir_veya_olustur()
+    gold_val = st.number_input("Gr Altın (₺)", value=kayitli_altin, format="%.2f")
+    silver_val = st.number_input("Gr Gümüş (₺)", value=kayitli_gumus, format="%.2f")
     
     if st.button("Fiyatları Sabitle 💾"):
-        with st.spinner("Ayarlar kaydediliyor..."):
-            piyasa_fiyatlarini_guncelle(gold_val, silver_val)
+        piyasa_fiyatlarini_guncelle(gold_val, silver_val)
         st.success("Fiyatlar güncellendi!")
         st.rerun()
 
     st.session_state['piyasa_gold'] = gold_val
     st.session_state['piyasa_silver'] = silver_val
-
     st.divider()
-    
+
     # --- İŞLEM EKLEME ---
     st.header("💸 İşlem Ekle")
-    
     tarih_giris = st.date_input("Tarih", datetime.today())
     tur_giris = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"])
     
     taksit_sayisi = 1
     if tur_giris == "Gider":
-        is_taksit = st.checkbox("Taksitli mi?")
-        if is_taksit:
+        if st.checkbox("Taksitli mi?"):
             taksit_sayisi = st.slider("Taksit Sayısı", 2, 12, 3)
-            st.caption(f"ℹ️ Tutar {taksit_sayisi} aya bölünecek.")
-    
-    miktar_bilgisi = ""
+
     if tur_giris == "Gider":
         kategoriler = ["Kredi Kartı", "Mutfak", "Fatura", "Kira", "Ulaşım", "Market", "Sağlık", "Giyim", "Eğitim", "Diğer"]
     elif tur_giris == "Gelir":
         kategoriler = ["Maaş", "Ek Gelir", "Prim", "Borç Alacak"]
-    else: # YATIRIM
+    else:
         kategoriler = ["Altın", "Gümüş", "Döviz", "Borsa", "Fon", "Bitcoin", "Bes"]
         miktar = st.text_input("Miktar (Örn: 5 Gram)")
-        if miktar: miktar_bilgisi = f"[{miktar}] "
+        miktar_bilgisi = f"[{miktar}] " if miktar else ""
 
     kategori_giris = st.selectbox("Kategori", kategoriler)
     aciklama_giris = st.text_input("Açıklama")
-    
-    # --- TUTAR GİRİŞİ ---
     tutar_text = st.text_input("Toplam Tutar (₺)", placeholder="Örn: 5890,00")
     
     def parse_tutar_manual(x):
         try:
-            x = x.replace("₺", "").replace("TL", "").strip()
-            x = x.replace(".", "").replace(",", ".")
-            return float(x)
-        except:
-            return 0.0
+            return float(x.replace("₺", "").replace("TL", "").replace(".", "").replace(",", ".").strip())
+        except: return 0.0
 
     tutar_float = parse_tutar_manual(tutar_text) if tutar_text else 0.0
     
-    # Kayıt Hazırlığı
-    rows_to_send = [] 
-    
-    if tutar_float > 0:
-        ay_map = {1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran", 
-                  7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık"}
-        
-        # Google'a TR formatında (virgüllü) string gönderiyoruz
-        if taksit_sayisi > 1:
-            raw_aylik = tutar_float / taksit_sayisi
-            tutar_str_tr = "{:.2f}".format(raw_aylik).replace(".", ",")
-            
-            for i in range(taksit_sayisi):
-                gelecek_tarih = tarih_giris + relativedelta(months=i)
-                yeni_aciklama = f"{aciklama_giris} ({i+1}/{taksit_sayisi}. Taksit)"
-                
-                rows_to_send.append([
-                    str(gelecek_tarih.strftime("%Y-%m-%d")),
-                    ay_map[gelecek_tarih.month],
-                    gelecek_tarih.year,
-                    kategori_giris,
-                    yeni_aciklama,
-                    tutar_str_tr,
-                    tur_giris
-                ])
-        else:
-            final_aciklama = miktar_bilgisi + aciklama_giris if aciklama_giris else miktar_bilgisi + tur_giris
-            tutar_str_tr = "{:.2f}".format(tutar_float).replace(".", ",")
-            
-            rows_to_send.append([
-                str(tarih_giris.strftime("%Y-%m-%d")),
-                ay_map[tarih_giris.month],
-                tarih_giris.year,
-                kategori_giris,
-                final_aciklama,
-                tutar_str_tr,
-                tur_giris
-            ])
-
-        st.caption("📝 **Kayıt Önizlemesi**")
-        st.info(f"Girilen: {tutar_float:,.2f} ₺ | Kaydedilecek: **{rows_to_send[0][5]} ₺**")
-        
     if st.button("Kaydet 💾", type="primary"):
-        if tutar_float > 0 and rows_to_send:
-            with st.spinner('Google Sheets\'e yazılıyor...'):
-                veri_kaydet_liste(rows_to_send)
-            st.success(f"{len(rows_to_send)} adet kayıt başarıyla eklendi!")
-            st.rerun()
-        elif tutar_float == 0:
-            st.error("Lütfen geçerli bir tutar girin.")
-
-    # --- SİLME ---
-    st.divider()
-    if not df.empty:
-        with st.expander("🗑️ Kayıt Sil (Akıllı)"):
-            df_gosterim = df.reset_index().sort_index(ascending=False)
-            secenekler = df_gosterim.apply(lambda x: f"NO: {x['index']} | {x['Tarih']} | {x['Aciklama']} | {x['Tutar']:,.2f} ₺", axis=1)
-            sil_secim = st.selectbox("Silinecek Kayıt:", secenekler)
+        if tutar_float > 0:
+            ay_map = {1:"Ocak",2:"Şubat",3:"Mart",4:"Nisan",5:"Mayıs",6:"Haziran",7:"Temmuz",8:"Ağustos",9:"Eylül",10:"Ekim",11:"Kasım",12:"Aralık"}
+            rows_to_send = []
+            if taksit_sayisi > 1:
+                aylik = tutar_float / taksit_sayisi
+                for i in range(taksit_sayisi):
+                    d = tarih_giris + relativedelta(months=i)
+                    rows_to_send.append([d.strftime("%Y-%m-%d"), ay_map[d.month], d.year, kategori_giris, f"{aciklama_giris} ({i+1}/{taksit_sayisi}. Taksit)", "{:.2f}".format(aylik).replace(".", ","), tur_giris])
+            else:
+                desc = (miktar_bilgisi + aciklama_giris) if tur_giris == "Yatırım" else aciklama_giris
+                rows_to_send.append([tarih_giris.strftime("%Y-%m-%d"), ay_map[tarih_giris.month], tarih_giris.year, kategori_giris, desc, "{:.2f}".format(tutar_float).replace(".", ","), tur_giris])
             
-            if st.button("Seçiliyi Sil"):
-                if sil_secim:
-                    idx = int(sil_secim.split("|")[0].replace("NO:", "").strip())
-                    row_data = df.loc[idx]
-                    tutar = row_data["Tutar"]
-                    
-                    match = re.search(r"(.*?) \((\d+)/(\d+)\. Taksit\)", str(row_data["Aciklama"]))
-                    silinecekler = [idx]
-                    
-                    if match:
-                        urun = match.group(1)
-                        toplam_taksit = match.group(3)
-                        benzerler = df[
-                            (df["Aciklama"].str.contains(re.escape(urun), na=False)) &
-                            (df["Aciklama"].str.contains(f"/{toplam_taksit}. Taksit", na=False)) &
-                            (df["Tutar"] == tutar)
-                        ]
-                        if not benzerler.empty:
-                            silinecekler = benzerler.index.tolist()
-                            st.info(f"Tüm taksit grubu siliniyor... ({len(silinecekler)} kayıt)")
-
-                    toplu_sil(silinecekler)
-                    st.success("Silindi!")
-                    st.rerun()
+            veri_kaydet_liste(rows_to_send)
+            st.success("Kaydedildi!")
+            st.rerun()
 
 # --- DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
@@ -308,8 +201,7 @@ if not df.empty:
     sec_ay = col_f2.selectbox("Ay", aylar)
     
     df_f = df[df["Yıl"] == sec_yil]
-    if sec_ay != "Tümü":
-        df_f = df_f[df_f["Ay"] == sec_ay]
+    if sec_ay != "Tümü": df_f = df_f[df_f["Ay"] == sec_ay]
 
     top_gelir = df_f[df_f["Tur"] == "Gelir"]["Tutar"].sum()
     top_gider = df_f[df_f["Tur"] == "Gider"]["Tutar"].sum()
@@ -318,13 +210,13 @@ if not df.empty:
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Toplam Gelir", f"{top_gelir:,.2f} ₺")
-    c2.metric("Giderler", f"{top_gider:,.2f} ₺", delta_color="inverse")
+    c2.metric("Giderler", f"{top_gider:,.2f} ₺")
     c3.metric("Yatırım (Maliyet)", f"{top_yatirim_maliyet:,.2f} ₺")
     c4.metric("Kalan Nakit", f"{kalan_nakit:,.2f} ₺")
     
     st.divider()
     
-    # GRAFİKLER
+    # --- TABLAR ---
     tab1, tab2 = st.tabs(["📉 Gider Analizi", "💰 Portföy Kâr/Zarar"])
     
     with tab1:
@@ -340,7 +232,9 @@ if not df.empty:
             st.plotly_chart(fig2, use_container_width=True)
 
     with tab2:
+        # Sadece 'Yatırım' türündeki verileri alıyoruz
         df_y = df[df["Tur"] == "Yatırım"].copy()
+        
         if not df_y.empty:
             guncel_gold = st.session_state.get('piyasa_gold', 0)
             guncel_silver = st.session_state.get('piyasa_silver', 0)
@@ -348,44 +242,39 @@ if not df.empty:
             def calculate_current(row):
                 desc = str(row["Aciklama"])
                 cat = str(row["Kategori"]).lower()
-                import re
                 match = re.search(r'\[([\d\.,]+)', desc)
                 if match:
                     qty_str = match.group(1).replace(".", "").replace(",", ".")
-                    try: qty = float(qty_str)
-                    except: return 0
-                    
-                    if "altın" in cat: return qty * guncel_gold
-                    if "gümüş" in cat: return qty * guncel_silver
+                    try:
+                        qty = float(qty_str)
+                        if "altın" in cat: return qty * guncel_gold
+                        if "gümüş" in cat: return qty * guncel_silver
+                    except: return row["Tutar"]
                 return row["Tutar"]
 
             df_y["Guncel"] = df_y.apply(calculate_current, axis=1)
             df_y["Fark"] = df_y["Guncel"] - df_y["Tutar"]
             
             k1, k2, k3 = st.columns(3)
-            k1.metric("Maliyet", f"{df_y['Tutar'].sum():,.2f} ₺")
-            k2.metric("Piyasa Değeri", f"{df_y['Guncel'].sum():,.2f} ₺")
-            k3.metric("Kâr/Zarar", f"{df_y['Fark'].sum():,.2f} ₺")
+            k1.metric("Toplam Maliyet", f"{df_y['Tutar'].sum():,.2f} ₺")
+            k2.metric("Güncel Değer", f"{df_y['Guncel'].sum():,.2f} ₺")
+            k3.metric("Toplam Kâr/Zarar", f"{df_y['Fark'].sum():,.2f} ₺")
             
-            # ₺ İBARESİ EKLENMİŞ TABLO
             st.dataframe(
                 df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Guncel", "Fark"]].style.format({
-                    "Tutar": "{:,.2f} ₺",
-                    "Guncel": "{:,.2f} ₺",
-                    "Fark": "{:,.2f} ₺"
-                }), 
-                use_container_width=True
+                    "Tutar": "{:,.2f} ₺", "Guncel": "{:,.2f} ₺", "Fark": "{:,.2f} ₺"
+                }), use_container_width=True
             )
         else:
             st.info("Yatırım kaydı yok.")
 
+    # --- TÜM İŞLEMLER TABLOSU (TABLARIN DIŞINDA EN ALTTA) ---
     st.divider()
     st.subheader("📋 Tüm İşlemler")
-    # ₺ İBARESİ EKLENMİŞ TABLO
     st.dataframe(
         df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), 
         use_container_width=True
     )
+
 else:
     st.info("Veri yok.")
-
