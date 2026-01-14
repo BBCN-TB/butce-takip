@@ -225,7 +225,7 @@ with st.sidebar:
     else: kats = ["Altın", "Gümüş", "Döviz", "Borsa", "Bitcoin"]
     
     kat = st.selectbox("Kategori", kats, key=f"kat_select_{tur}")
-    miktar = st.text_input("Miktar (Yatırım ise: 5.5)") if tur == "Yatırım" else ""
+    miktar = st.text_input("Miktar (Yatırım ise: 10)") if tur == "Yatırım" else ""
     aciklama = st.text_input("Açıklama")
     tutar_input = st.text_input("Tutar (Örn: 1500,50)")
     
@@ -315,7 +315,7 @@ if not df.empty:
             fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Analizi")
             # SÜTUN GRAFİK
             df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
-            fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Denge")
+            fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Nakit Akış Analizi")
 
             # --- KARANLIK MOD İÇİN GRAFİK AYARLARI ---
             if theme_toggle:
@@ -401,4 +401,5 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
 
