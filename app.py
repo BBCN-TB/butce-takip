@@ -300,24 +300,24 @@ if not df.empty:
         c_g1, c_g2 = st.columns(2)
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
         if not df_p.empty:
-            # 1. PASTA GRAFİK
+            # 1. PASTA GRAFİK (Harcama Analizi)
             fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Analizi")
             fig1.update_traces(textposition='inside', textinfo='percent+label')
             
-            # Alt boşluk ayarı (Overlap'i engeller)
+            # DÜZELTME BURADA: Alt boşluğu (b=100) artırdık
             fig1.update_layout(
-                legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
-                margin=dict(b=50) # Alt tarafa boşluk ekledik
+                legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+                margin=dict(t=40, b=100, l=10, r=10) 
             )
 
             # 2. SÜTUN GRAFİK (Nakit Akış Analizi) - RENKLİ
             df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
             
-            # --- ÖZEL RENK AYARI ---
+            # Renk Haritası
             renk_haritasi = {
                 "Gelir": "#00CC96",   # YEŞİL
-                "Gider": "#8B0000",   # KIRMIZI
-                "Yatırım": "#1F77B4"  # KOYU MAVİ (Varsayılan Plotly Mavisi veya #00008B)
+                "Gider": "#EF553B",   # KIRMIZI
+                "Yatırım": "#1F77B4"  # KOYU MAVİ
             }
             
             fig2 = px.bar(
@@ -326,16 +326,16 @@ if not df.empty:
                 y="Tutar", 
                 color="Tur", 
                 title="Nakit Akış Analizi", 
-                text_auto='.1s',
-                color_discrete_map=renk_haritasi # Renkleri uygula
+                text_auto='.2s',
+                color_discrete_map=renk_haritasi
             )
             
-            # Alt boşluk ve Efsane ayarı
+            # DÜZELTME BURADA: Alt boşluğu (b=100) artırdık ve x ekseni başlığını kapattık
             fig2.update_layout(
-                xaxis_title=None, # Karmaşayı önlemek için alttaki 'Tur' yazısını kaldır
-                legend_title_text='', # Efsane başlığını kaldır
-                legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5),
-                margin=dict(b=50)
+                xaxis_title=None, 
+                legend_title_text='', 
+                legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+                margin=dict(t=40, b=100, l=10, r=10)
             )
 
             # KARANLIK MOD AYARLARI
@@ -351,7 +351,7 @@ if not df.empty:
 
             c_g1.plotly_chart(fig1, use_container_width=True)
             c_g2.plotly_chart(fig2, use_container_width=True)
-
+            
     with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
@@ -414,4 +414,5 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
 
