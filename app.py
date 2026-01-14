@@ -146,10 +146,10 @@ if not df.empty:
             c_g2.plotly_chart(fig2, use_container_width=True)
 
     with tab2:
-    df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
+        df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
     
-    if not df_y.empty:
-            def portfoy_hesap(row):
+            if not df_y.empty:
+                def portfoy_hesap(row):
                 d, c = str(row["Aciklama"]), str(row["Kategori"]).lower()
                 match = re.search(r'\[([\d\.,]+)', d) # RegEx hatası düzeltildi
                 if match:
@@ -179,5 +179,6 @@ if not df.empty:
     st.subheader("📋 İşlem Geçmişi")
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else: st.info("Veri yok.")
+
 
 
