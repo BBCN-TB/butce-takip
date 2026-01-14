@@ -7,7 +7,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
 
-# --- 1. AYARLAR VE MODERN TASARIM (CSS) ---
+# --- 1. AYARLAR VE TASARIM ---
 SHEET_ADI = "Butce_Veritabanı"
 AYARLAR_TAB_ADI = "Ayarlar"
 
@@ -15,34 +15,10 @@ st.set_page_config(page_title="Finans Pro", layout="wide", page_icon="💰")
 
 st.markdown("""
 <style>
-/* Genel Arka Plan ve Yazı Tipi */
-.stApp {
-    background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-/* Metrik Kartları */
-div[data-testid="stMetric"] {
-    background: white;
-    padding: 18px;
-    border-radius: 18px;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-    text-align: center;
-    border: 1px solid #eef2f6;
-}
-/* Butonlar */
-.stButton > button {
-    border-radius: 14px;
-    padding: 0.6rem 1rem;
-    font-weight: 600;
-    background: linear-gradient(to right, #4facfe, #00f2fe);
-    color: white;
-    border: none;
-    width: 100%;
-}
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background: #ffffff;
-}
+.stApp { background: linear-gradient(135deg, #f5f7fa 0%, #e4ecf7 100%); font-family: sans-serif; }
+div[data-testid="stMetric"] { background: white; padding: 18px; border-radius: 18px; box-shadow: 0 8px 20px rgba(0,0,0,0.06); text-align: center; }
+.stButton > button { border-radius: 14px; font-weight: 600; background: linear-gradient(to right, #4facfe, #00f2fe); color: white; border: none; }
+section[data-testid="stSidebar"] { background: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -50,14 +26,13 @@ section[data-testid="stSidebar"] {
 def check_password():
     if st.session_state.get("password_correct", False): return True
     if "LOGIN_SIFRE" not in st.secrets: return True
-    st.text_input("Lütfen Şifrenizi Girin", type="password", key="password_input", on_change=password_entered)
+    st.text_input("Şifre", type="password", key="password_input", on_change=password_entered)
     return False
 
 def password_entered():
     if st.session_state["password_input"] == st.secrets["LOGIN_SIFRE"]:
         st.session_state["password_correct"] = True
-        del st.session_state["password_input"]
-    else: st.error("😕 Şifre Yanlış")
+    else: st.error("😕 Hatalı Şifre")
 
 if not check_password(): st.stop()
 
@@ -84,8 +59,7 @@ def veri_yukle():
         return df
     except: return pd.DataFrame()
 
-df = veri_yukle()
-return df
+# --- SİLME FONKSİYONU ---
 def veri_sil_toplu(indexler):
     try:
         client = get_client() 
@@ -103,6 +77,8 @@ def veri_sil_toplu(indexler):
         st.error(f"Hata: {e}")
         return False
 
+df = veri_yukle()
+
 # --- 3. PİYASA FİYATLARI ---
 def piyasa_cek():
     try:
@@ -114,29 +90,7 @@ def piyasa_cek():
 
 g_altin, g_gumus = piyasa_cek()
 
-# --- VERİ SİLME FONKSİYONU ---
-def veri_sil_toplu(indexler):
-    try:
-        # Mevcut veriyi tekrar çek (en güncel hali için)
-        sh = get_client().open(SHEET_ADI).sheet1
-        tum_veriler = sh.get_all_values()
-        header = tum_veriler[0]
-        df_mevcut = pd.DataFrame(tum_veriler[1:], columns=header)
-        
-        # Seçilen satırları index numarasına göre uçur
-        df_yeni = df_mevcut.drop(index=indexler)
-        
-        # Sayfayı komple temizle ve başlıkla birlikte yeni listeyi yaz
-        sh.clear()
-        sh.append_row(header)
-        if not df_yeni.empty:
-            sh.append_rows(df_yeni.values.tolist(), value_input_option='USER_ENTERED')
-        return True
-    except Exception as e:
-        st.error(f"Silme işlemi sırasında hata oluştu: {e}")
-        return False
-
-# --- 4. KENAR ÇUBUĞU (İŞLEM EKLEME) ---
+# --- 4. KENAR ÇUBUĞU (EKLEME VE SİLME) ---
 with st.sidebar:
     st.title("➕ Yeni İşlem")
     tarih = st.date_input("Tarih", datetime.today())
@@ -150,60 +104,79 @@ with st.sidebar:
     miktar = st.text_input("Miktar (Örn: 5.5 Gram)") if tur == "Yatırım" else ""
     aciklama = st.text_input("Açıklama")
     tutar_input = st.text_input("Tutar (Örn: 1500,50)")
+    
+    taksitli = False
+    t_sayi = 1
+    if tur == "Gider":
+        taksitli = st.checkbox("Taksitli mi?")
+        if taksitli: t_sayi = st.slider("Taksit", 2, 12, 3)
 
-    if st.button("KAYDET 💾"):
+    if st.button("KAYDET 💾", use_container_width=True):
         if tutar_input:
             tutar_f = float(tutar_input.replace(".", "").replace(",", "."))
             ay_map = {1:"Ocak",2:"Şubat",3:"Mart",4:"Nisan",5:"Mayıs",6:"Haziran",7:"Temmuz",8:"Ağustos",9:"Eylül",10:"Ekim",11:"Kasım",12:"Aralık"}
-            desc = f"[{miktar}] {aciklama}" if miktar else aciklama
-            row = [str(tarih.strftime("%Y-%m-%d")), ay_map[tarih.month], tarih.year, kat, desc, str(tutar_f).replace(".", ","), tur]
-            get_client().open(SHEET_ADI).sheet1.append_row(row, value_input_option='USER_ENTERED')
+            rows = []
+            if taksitli:
+                pay = tutar_f / t_sayi
+                for i in range(t_sayi):
+                    d = tarih + relativedelta(months=i)
+                    rows.append([str(d.strftime("%Y-%m-%d")), ay_map[d.month], d.year, kat, f"{aciklama} ({i+1}/{t_sayi}.Tks)", str(round(pay,2)).replace(".", ","), tur])
+            else:
+                desc = f"[{miktar}] {aciklama}" if miktar else aciklama
+                rows.append([str(tarih.strftime("%Y-%m-%d")), ay_map[tarih.month], tarih.year, kat, desc, str(tutar_f).replace(".", ","), tur])
+            get_client().open(SHEET_ADI).sheet1.append_rows(rows, value_input_option='USER_ENTERED')
             st.success("Kaydedildi!")
             st.rerun()
-if st.form_submit_button("KAYDET"): # veya st.button("KAYDET 💾")
-    t.divider()
+
+    # --- SİLME PANELİ (SİDEBAR İÇİNDE) ---
+    st.divider()
     st.header("🗑️ İşlem Silme")
 
-    if not df_f.empty:
-        df_sil = df_f.copy()
-        df_sil["Gosterim"] = df_sil["Tarih"] + " | " + df_sil["Kategori"] + " | " + df_sil["Tutar"].astype(str) + "₺"
-        secilen_islem = st.selectbox("Silinecek İşlemi Seçin", ["Seçiniz..."] + df_sil["Gosterim"].tolist())
+    yil_listesi = sorted(df["Yıl"].dropna().unique().astype(int), reverse=True)
+    f_yil = st.selectbox("Yıl Seç", yil_listesi, key="sil_yil")
+    f_ay = st.selectbox("Ay Seç", list(df["Ay"].unique()), key="sil_ay")
+    
+    df_filtre_sil = df[(df["Yıl"] == f_yil) & (df["Ay"] == f_ay)].copy()
+
+    if not df_filtre_sil.empty:
+        df_filtre_sil["Gosterim"] = df_filtre_sil["Tarih"] + " | " + df_filtre_sil["Kategori"] + " | " + df_filtre_sil["Tutar"].astype(str) + "₺"
+        secilen_islem = st.selectbox("Silinecek İşlem", ["Seçiniz..."] + df_filtre_sil["Gosterim"].tolist())
 
         if secilen_islem != "Seçiniz...":
-            idx = df_sil[df_sil["Gosterim"] == secilen_islem].index
-            btn_col1, btn_col2 = st.columns(2)
+            idx = df_filtre_sil[df_filtre_sil["Gosterim"] == secilen_islem].index
+            c1, c2 = st.columns(2)
             
-            if btn_col1.button("Tekil Sil", use_container_width=True):
+            if c1.button("Tek Sil", use_container_width=True):
                 if veri_sil_toplu(idx):
                     st.success("Silindi!")
                     st.rerun()
             
-            if btn_col2.button("Tüm Seri Sil", use_container_width=True):
-                aciklama = df.loc[idx[0], "Aciklama"]
-                match = re.search(r"(.+?)\s\(\d+/\d+\.Tks\)", str(aciklama))
+            if c2.button("Seri Sil", use_container_width=True):
+                target_desc = df.loc[idx[0], "Aciklama"]
+                match = re.search(r"(.+?)\s\(\d+/\d+\.Tks\)", str(target_desc))
                 if match:
-                    temel_isim = match.group(1).strip()
-                    taksit_idx = df[df["Aciklama"].str.contains(re.escape(temel_isim), na=False)].index
-                    if veri_sil_toplu(taksit_idx):
+                    base_name = match.group(1).strip()
+                    t_idx = df[df["Aciklama"].str.contains(re.escape(base_name), na=False)].index
+                    if veri_sil_toplu(t_idx):
                         st.success("Tüm seri silindi!")
                         st.rerun()
                 else:
-                    st.warning("Bu işlem taksitli değil!")
-    # --- 5. DASHBOARD ---
+                    st.warning("Taksitli değil!")
+    else:
+        st.write("Bu ayda kayıt yok.")
+
+# --- 5. DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
-    f1, f2 = st.columns(2)
-    yil_listesi = sorted(df["Yıl"].dropna().unique().astype(int), reverse=True)
-    s_yil = f1.selectbox("Yıl", yil_listesi)
-    s_ay = f2.selectbox("Ay", ["Tümü"] + list(df["Ay"].unique()))
+    col_f1, col_f2 = st.columns(2)
+    yil_options = sorted(df["Yıl"].dropna().unique().astype(int), reverse=True)
+    s_yil = col_f1.selectbox("Filtre: Yıl", yil_options)
+    s_ay = col_f2.selectbox("Filtre: Ay", ["Tümü"] + list(df["Ay"].unique()))
     
-    # Ana Filtreleme
     df_f = df[df["Yıl"] == s_yil]
-    if s_ay != "Tümü": 
-        df_f = df_f[df_f["Ay"] == s_ay]
+    if s_ay != "Tümü": df_f = df_f[df_f["Ay"] == s_ay]
 
-    # Metrikler
     m1, m2, m3, m4 = st.columns(4)
     gelir = df_f[df_f["Tur"] == "Gelir"]["Tutar"].sum()
     gider = df_f[df_f["Tur"] == "Gider"]["Tutar"].sum()
@@ -215,102 +188,38 @@ if not df.empty:
 
     st.divider()
 
-    tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Yatırım Durumu"])
+    tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Portföy"])
 
     with tab1:
         c_g1, c_g2 = st.columns(2)
-        df_pie = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
-        if not df_pie.empty:
-            fig1 = px.pie(df_pie, values="Tutar", names="Kategori", hole=0.4, title="Harcama Dağılımı")
+        df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
+        if not df_p.empty:
+            fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Dağılımı")
             c_g1.plotly_chart(fig1, use_container_width=True)
-            df_bar = df_f.groupby("Tur")["Tutar"].sum().reset_index()
-            fig2 = px.bar(df_bar, x="Tur", y="Tutar", color="Tur", title="Bütçe Dengesi")
+            df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
+            fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Denge")
             c_g2.plotly_chart(fig2, use_container_width=True)
 
     with tab2:
-        # ÖNEMLİ: Sadece seçili yıl ve aydaki yatırımları getirir
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
-        
         if not df_y.empty:
-            def portfoy_hesap(row):
+            def calc(row):
                 d, c = str(row["Aciklama"]), str(row["Kategori"]).lower()
-                match = re.search(r'\[([\d\.,]+)', d)
-                if match:
+                m = re.search(r'\[([\d\.,]+)', d)
+                if m:
                     try:
-                        q = float(match.group(1).replace(",", "."))
+                        q = float(m.group(1).replace(",", "."))
                         if "altın" in c: return q * g_altin
                         if "gümüş" in c: return q * g_gumus
                     except: return row["Tutar"]
                 return row["Tutar"]
-            
-            df_y["Güncel Değer"] = df_y.apply(portfoy_hesap, axis=1).fillna(0)
-            df_y["Kâr/Zarar"] = (df_y["Güncel Değer"] - df_y["Tutar"]).fillna(0)
-            
-            st.write(f"### 💎 {s_ay} {s_yil} Yatırımları")
-            df_display = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel Değer", "Kâr/Zarar"]]
-            st.dataframe(df_display.style.format({
-                "Tutar": "{:,.2f} ₺", "Güncel Değer": "{:,.2f} ₺", "Kâr/Zarar": "{:,.2f} ₺"
-            }), use_container_width=True)
-        else:
-            st.info(f"{s_ay} {s_yil} döneminde yatırım kaydı bulunamadı.")
+            df_y["Güncel"] = df_y.apply(calc, axis=1).fillna(0)
+            df_y["K/Z"] = (df_y["Güncel"] - df_y["Tutar"]).fillna(0)
+            st.dataframe(df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel", "K/Z"]].style.format("{:,.2f} ₺"), use_container_width=True)
+        else: st.info("Yatırım yok.")
 
     st.divider()
     st.subheader("📋 İşlem Geçmişi")
-    # --- 6. TÜM İŞLEMLER VE SİLME PANELİ ---
-    st.divider()
-    st.subheader("📋 İşlem Geçmişi")
-    st.info("💡 Silmek istediğiniz satırları tablonun solundaki kutucuklardan seçebilirsiniz.")
-
-    # Veriyi tarihe göre sıralı göster
-    df_gecmis = df_f.sort_values("Tarih", ascending=False)
-    
-    # SEÇİLEBİLİR TABLO
-    # Bu tablo üzerinden satır seçtiğinde 'secilen_satirlar' değişkeni dolacak
-    secilen_satirlar = st.dataframe(
-        df_gecmis.style.format({"Tutar": "{:,.2f} ₺"}), 
-        use_container_width=True,
-        on_select="rerun",           # Seçim yapınca sayfayı tetikle
-        selection_mode="multi-row"    # Çoklu satır seçimine izin ver
-    )
-
-    # Eğer en az bir satır seçildiyse Silme Butonlarını göster
-    if len(secilen_satirlar.selection.rows) > 0:
-        st.warning(f"⚠️ {len(secilen_satirlar.selection.rows)} işlem seçildi. Ne yapmak istersiniz?")
-        
-        col_sil1, col_sil2 = st.columns(2)
-        
-        # SADECE SEÇİLENLERİ SİL
-        if col_sil1.button("Seçilen Satırları Sil 🗑️", type="primary"):
-            # Orijinal dataframe indexlerini alıyoruz
-            secilen_indexler = df_gecmis.iloc[secilen_satirlar.selection.rows].index
-            if veri_sil_toplu(secilen_indexler):
-                st.success("İşlemler başarıyla silindi!")
-                st.rerun()
-
-        # TÜM TAKSİT GRUBUNU SİL
-        if col_sil2.button("Seçilenin Tüm Taksitlerini Sil 🔄"):
-            secilen_veriler = df_gecmis.iloc[secilen_satirlar.selection.rows]
-            silinecek_ek_indexler = []
-            
-            for _, row in secilen_veriler.iterrows():
-                aciklama = str(row["Aciklama"])
-                # Regex ile taksit ibaresini (Örn: " (1/3.Tks)") temizleyip ana ismi bulur
-                match = re.search(r"(.+?)\s\(\d+/\d+\.Tks\)", aciklama)
-                if match:
-                    temel_isim = match.group(1).strip()
-                    # Veritabanında bu ismi içeren tüm satırları bul
-                    taksit_indexleri = df[df["Aciklama"].str.contains(re.escape(temel_isim), na=False)].index
-                    silinecek_ek_indexler.extend(taksit_indexleri)
-            
-            # Tekrar eden indexleri temizle
-            toplam_silinecek = list(set(silinecek_ek_indexler))
-            
-            if toplam_silinecek:
-                if veri_sil_toplu(toplam_silinecek):
-                    st.success(f"Taksit serisine ait {len(toplam_silinecek)} kayıt silindi!")
-                    st.rerun()
-            else:
-                st.error("Seçtiğiniz işlem taksitli bir seri gibi görünmüyor.")
+    st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
+else:
     st.info("Veri yok.")
-
-
