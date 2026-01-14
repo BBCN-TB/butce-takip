@@ -5,7 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
-import plotly.express as px # Grafik kütüphanesini import etsek de kullanmayacağız ama hata vermesin diye kalsın
+import plotly.express as px
 
 # --- 1. AYARLAR VE TASARIM ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -17,7 +17,7 @@ st.set_page_config(page_title="Finans Pro", layout="wide", page_icon="💰")
 theme_toggle = st.sidebar.toggle("🌙 Karanlık Mod", value=True)
 
 if theme_toggle:
-    # --- DARK MODE (DÜZELTİLMİŞ) ---
+    # --- DARK MODE (GELİŞMİŞ GRAFİK VE TABLO DESTEĞİ) ---
     st.markdown("""
     <style>
     /* Ana Arka Plan */
@@ -26,30 +26,41 @@ if theme_toggle:
     /* Sidebar */
     section[data-testid="stSidebar"] { background-color: #262730; }
     
-    /* METRİK KARTLARI (Koyu Gri Zemin - Beyaz Yazı) */
+    /* METRİK KARTLARI */
     div[data-testid="stMetric"] {
         background-color: #1F2937;
         border: 1px solid #374151;
         border-radius: 12px;
         padding: 15px;
     }
-    /* Metrik Etiketleri (Gelir, Gider vs.) */
-    div[data-testid="stMetricLabel"] p {
-        color: #9CA3AF !important; /* Açık Gri */
-        font-size: 14px !important;
-    }
-    /* Metrik Değerleri (Rakamlar) */
-    div[data-testid="stMetricValue"] div {
-        color: #FFFFFF !important; /* Tam Beyaz */
-        font-size: 24px !important;
-        font-weight: bold !important;
+    /* Metrik Etiketleri */
+    div[data-testid="stMetricLabel"] p { color: #9CA3AF !important; font-size: 14px !important; }
+    /* Metrik Değerleri */
+    div[data-testid="stMetricValue"] div { color: #FFFFFF !important; font-size: 24px !important; font-weight: bold !important; }
+
+    /* --- YENİ EKLENENLER --- */
+
+    /* 1. GRAFİK KUTULARI (Plotly Chart Containers) */
+    /* Grafikleri metrikler gibi koyu bir kutu içine alır */
+    div[data-testid="stPlotlyChart"] {
+        background-color: #1F2937;
+        border: 1px solid #374151;
+        border-radius: 12px;
+        padding: 10px;
     }
 
-    /* Tablolar */
+    /* 2. TABLOLAR (Dataframes - İşlem Geçmişi vb.) */
     div[data-testid="stDataFrame"] {
-        background-color: #1F2937;
+        background-color: #1F2937; /* Koyu Zemin */
+        border: 1px solid #374151;
         border-radius: 8px;
     }
+    /* Tablo içi yazı rengini zorla beyaz yap (Okunabilirlik için) */
+    div[data-testid="stDataFrame"] * {
+        color: #E5E7EB !important;
+    }
+    
+    /* ----------------------- */
 
     /* Input Alanları */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
@@ -66,6 +77,9 @@ if theme_toggle:
         color: white;
         border: 1px solid #4B5563;
     }
+    /* Sekme Başlıkları */
+    .stTabs [data-baseweb="tab"] { color: #9CA3AF; }
+    .stTabs [aria-selected="true"] { color: #FFFFFF !important; }
     </style>
     """, unsafe_allow_html=True)
 else:
@@ -89,6 +103,14 @@ else:
         border: none; 
     }
     section[data-testid="stSidebar"] { background: #ffffff; }
+    /* Light modda grafik kutularına gölge verelim */
+    div[data-testid="stPlotlyChart"] {
+        background: white;
+        border-radius: 18px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        padding: 10px;
+        border: 1px solid #eef2f6;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -289,10 +311,25 @@ if not df.empty:
         c_g1, c_g2 = st.columns(2)
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
         if not df_p.empty:
+            # PASTA GRAFİK
             fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Dağılım")
-            c_g1.plotly_chart(fig1, use_container_width=True)
+            # SÜTUN GRAFİK
             df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
             fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Denge")
+
+            # --- KARANLIK MOD İÇİN GRAFİK AYARLARI ---
+            if theme_toggle:
+                dark_layout = dict(
+                    paper_bgcolor='rgba(0,0,0,0)', # Dış çerçeve şeffaf (CSS kutusuna uyum sağlar)
+                    plot_bgcolor='rgba(0,0,0,0)',  # Çizim alanı şeffaf
+                    font=dict(color='#E5E7EB'),    # Yazı rengi açık gri
+                    title_font=dict(color='#FAFAFA') # Başlık rengi beyaz
+                )
+                fig1.update_layout(**dark_layout)
+                fig2.update_layout(**dark_layout)
+            # -----------------------------------------
+
+            c_g1.plotly_chart(fig1, use_container_width=True)
             c_g2.plotly_chart(fig2, use_container_width=True)
 
     with tab2:
@@ -360,6 +397,7 @@ if not df.empty:
     st.divider()
     st.subheader("📋 İşlem Geçmişi")
     df_f["Tutar"] = pd.to_numeric(df_f["Tutar"], errors='coerce').fillna(0)
+    # İşlem geçmişi tablosu zaten CSS ile koyu yapıldı
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
