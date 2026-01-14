@@ -59,8 +59,8 @@ if theme_toggle:
     
     /* 6. Tablolar (DataFrame) */
     div[data-testid="stDataFrame"] {
-        background-color: #111827;
-        border: 1px solid #374151;
+        background-color: #393E46;
+        border: 1px solid 948979;
         border-radius: 8px;
     }
     
@@ -400,5 +400,6 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
 
 
