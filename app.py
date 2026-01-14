@@ -307,7 +307,7 @@ if not df.empty:
 
     tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Portföy"])
 
-   with tab1:
+with tab1:
         c_g1, c_g2 = st.columns(2)
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
         
@@ -420,6 +420,7 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
 
 
 
