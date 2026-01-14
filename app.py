@@ -7,7 +7,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
 
-# --- 1. AYARLAR VE MODERN TASARIM (CSS) ---
+# --- 1. AYARLAR VE MODERN TASARIM ---
 SHEET_ADI = "Butce_Veritabanı"
 AYARLAR_TAB_ADI = "Ayarlar"
 
@@ -22,7 +22,7 @@ section[data-testid="stSidebar"] { background: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. GİRİŞ VE BAĞLANTI FONKSİYONLARI ---
+# --- 2. GİRİŞ VE BAĞLANTI ---
 def check_password():
     if st.session_state.get("password_correct", False): return True
     if "LOGIN_SIFRE" not in st.secrets: return True
@@ -79,7 +79,7 @@ def veri_sil_toplu(indexler):
 
 df = veri_yukle()
 
-# --- 3. PİYASA FONKSİYONLARI ---
+# --- 3. PİYASA İŞLEMLERİ ---
 def piyasa_cek():
     try:
         sh = get_client().open(SHEET_ADI).worksheet(AYARLAR_TAB_ADI)
@@ -111,7 +111,7 @@ def piyasa_guncelle(yeni_altin, yeni_gumus):
 
 g_altin, g_gumus = piyasa_cek()
 
-# --- 4. KENAR ÇUBUĞU (PİYASA, EKLEME, SİLME) ---
+# --- 4. SİDEBAR ---
 with st.sidebar:
     st.header("💰 Piyasalar")
     col_p1, col_p2 = st.columns(2)
@@ -229,49 +229,67 @@ if not df.empty:
     with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
-            # 1. HESAPLAMA (Güvenli Mod)
-            def calc_safe(row):
-                d, c = str(row["Aciklama"]), str(row["Kategori"]).lower()
-                m = re.search(r'\[([\d\.,]+)', d)
-                if m:
+            
+            # --- DETAYLI HESAPLAMA ---
+            def analyze_investment(row):
+                desc = str(row["Aciklama"])
+                cat = str(row["Kategori"]).lower()
+                tutar = float(row["Tutar"]) if row["Tutar"] else 0.0
+                
+                # Miktarı (Gram/Adet) Bul
+                qty = 0.0
+                match = re.search(r'\[([\d\.,]+)', desc)
+                if match:
                     try:
-                        qty = float(m.group(1).replace(".", "").replace(",", "."))
-                        if "altın" in c: return qty * g_altin
-                        if "gümüş" in c: return qty * g_gumus
-                    except: return row["Tutar"]
-                return row["Tutar"]
+                        qty = float(match.group(1).replace(".", "").replace(",", "."))
+                    except: qty = 0.0
+                
+                # 1. Birim Maliyet Hesapla (Toplam Tutar / Adet)
+                # Eğer adet varsa hesapla, yoksa 0
+                birim_maliyet = (tutar / qty) if qty > 0 else 0.0
+                
+                # 2. Güncel Değer Hesapla
+                guncel_deger = tutar # Varsayılan olarak değişmez
+                if qty > 0:
+                    if "altın" in cat: guncel_deger = qty * g_altin
+                    elif "gümüş" in cat: guncel_deger = qty * g_gumus
+                
+                # Sonuçları döndür
+                return pd.Series([birim_maliyet, guncel_deger])
 
-            df_y["Güncel"] = df_y.apply(calc_safe, axis=1)
-            df_y["Güncel"] = pd.to_numeric(df_y["Güncel"], errors='coerce').fillna(0)
-            df_y["Tutar"] = pd.to_numeric(df_y["Tutar"], errors='coerce').fillna(0)
+            # Hesaplamaları Uygula
+            df_calc = df_y.apply(analyze_investment, axis=1)
+            df_y["Birim Maliyet"] = df_calc[0]
+            df_y["Güncel"] = df_calc[1]
+            
+            # Kâr Zarar Hesapla
             df_y["K/Z"] = df_y["Güncel"] - df_y["Tutar"]
             
             st.write(f"### 💎 {s_ay} {s_yil} Portföy Performansı")
 
-            # 2. GRAFİK KALDIRILDI. SADECE TABLO GÖSTERİMİ:
-
-            df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel", "K/Z"]]
+            # Gösterilecek Sütunlar
+            df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Birim Maliyet", "Tutar", "Güncel", "K/Z"]]
             
-            # Özel Formatlayıcı: Ok ve Para Birimi ekler
+            # Tablo Formatlama
             def kz_format(val):
                 if pd.isna(val): return "-"
                 prefix = "▲ " if val >= 0 else "▼ "
                 return prefix + "{:,.2f} ₺".format(val)
 
-            # Özel Renklendirici: CSS ile renk verir
             def kz_color(val):
                 if pd.isna(val): return ""
-                color = '#00CC96' if val >= 0 else '#EF553B' # Yeşil / Kırmızı
+                color = '#00CC96' if val >= 0 else '#EF553B'
                 return f'color: {color}; font-weight: bold'
 
             st.dataframe(
                 df_disp.style
                 .format({
+                    "Birim Maliyet": "{:,.2f} ₺", # Yeni sütun formatı
                     "Tutar": "{:,.2f} ₺", 
                     "Güncel": "{:,.2f} ₺",
-                    "K/Z": kz_format # K/Z sütunu için özel format fonksiyonu
+                    "K/Z": kz_format
                 })
-                .map(kz_color, subset=['K/Z']), # Sadece K/Z sütununu renklendir
+                .map(kz_color, subset=['K/Z']),
                 use_container_width=True
             )
         else: 
