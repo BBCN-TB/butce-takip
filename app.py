@@ -85,6 +85,23 @@ def veri_yukle():
     except: return pd.DataFrame()
 
 df = veri_yukle()
+return df
+def veri_sil_toplu(indexler):
+    try:
+        client = get_client() 
+        sh = client.open(SHEET_ADI).sheet1
+        tum_veriler = sh.get_all_values()
+        header = tum_veriler[0]
+        df_mevcut = pd.DataFrame(tum_veriler[1:], columns=header)
+        df_yeni = df_mevcut.drop(index=indexler)
+        sh.clear()
+        sh.append_row(header)
+        if not df_yeni.empty:
+            sh.append_rows(df_yeni.values.tolist(), value_input_option='USER_ENTERED')
+        return True
+    except Exception as e:
+        st.error(f"Hata: {e}")
+        return False
 
 # --- 3. PİYASA FİYATLARI ---
 def piyasa_cek():
@@ -143,8 +160,36 @@ with st.sidebar:
             get_client().open(SHEET_ADI).sheet1.append_row(row, value_input_option='USER_ENTERED')
             st.success("Kaydedildi!")
             st.rerun()
+if st.form_submit_button("KAYDET"): # veya st.button("KAYDET 💾")
+    t.divider()
+    st.header("🗑️ İşlem Silme")
 
-# --- 5. DASHBOARD ---
+    if not df_f.empty:
+        df_sil = df_f.copy()
+        df_sil["Gosterim"] = df_sil["Tarih"] + " | " + df_sil["Kategori"] + " | " + df_sil["Tutar"].astype(str) + "₺"
+        secilen_islem = st.selectbox("Silinecek İşlemi Seçin", ["Seçiniz..."] + df_sil["Gosterim"].tolist())
+
+        if secilen_islem != "Seçiniz...":
+            idx = df_sil[df_sil["Gosterim"] == secilen_islem].index
+            btn_col1, btn_col2 = st.columns(2)
+            
+            if btn_col1.button("Tekil Sil", use_container_width=True):
+                if veri_sil_toplu(idx):
+                    st.success("Silindi!")
+                    st.rerun()
+            
+            if btn_col2.button("Tüm Seri Sil", use_container_width=True):
+                aciklama = df.loc[idx[0], "Aciklama"]
+                match = re.search(r"(.+?)\s\(\d+/\d+\.Tks\)", str(aciklama))
+                if match:
+                    temel_isim = match.group(1).strip()
+                    taksit_idx = df[df["Aciklama"].str.contains(re.escape(temel_isim), na=False)].index
+                    if veri_sil_toplu(taksit_idx):
+                        st.success("Tüm seri silindi!")
+                        st.rerun()
+                else:
+                    st.warning("Bu işlem taksitli değil!")
+    # --- 5. DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
@@ -267,4 +312,5 @@ if not df.empty:
             else:
                 st.error("Seçtiğiniz işlem taksitli bir seri gibi görünmüyor.")
     st.info("Veri yok.")
+
 
