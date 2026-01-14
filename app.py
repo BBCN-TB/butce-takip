@@ -224,7 +224,7 @@ if not df.empty:
             fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Denge")
             c_g2.plotly_chart(fig2, use_container_width=True)
 
-   with tab2:
+with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
             # 1. HESAPLAMA (Güvenli Mod)
@@ -284,3 +284,4 @@ if not df.empty:
             )
         else: 
             st.info("Veri yok.")
+
