@@ -5,9 +5,9 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import re
+import re  # re modülünü en başa aldık
 
-# --- 1. AYARLAR VE TASARIM (CSS) ---
+# --- 1. AYARLAR VE TASARIM ---
 SHEET_ADI = "Butce_Veritabanı"
 AYARLAR_TAB_ADI = "Ayarlar"
 
@@ -55,7 +55,6 @@ def veri_yukle():
                 return float(x_str) if x_str else 0.0
             except: return 0.0
         df["Tutar"] = df["Tutar"].apply(temizle)
-        # Yıl kolonunu sayıya çevir
         df["Yıl"] = pd.to_numeric(df["Yıl"], errors='coerce')
         return df
     except: return pd.DataFrame()
@@ -73,24 +72,17 @@ def piyasa_cek():
 
 g_altin, g_gumus = piyasa_cek()
 
-# --- 4. KENAR ÇUBUĞU (İŞLEM EKLEME) ---
+# --- 4. KENAR ÇUBUĞU ---
 with st.sidebar:
     st.title("➕ Yeni İşlem")
-    
     tarih = st.date_input("Tarih", datetime.today())
     tur = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"], key="main_tur")
     
-    # Kategori Listesini Dinamikleştirme
-    if tur == "Gider": 
-        kats = ["Mutfak", "Kredi Kartı", "Kira", "Fatura", "Pazar", "Ulaşım", "Eğitim", "Diğer"]
-    elif tur == "Gelir": 
-        kats = ["Maaş", "Ek Gelir", "Borç Alacak"]
-    else: 
-        kats = ["Altın", "Gümüş", "Döviz", "Borsa", "Bitcoin"]
+    if tur == "Gider": kats = ["Mutfak", "Kredi Kartı", "Kira", "Fatura", "Pazar", "Ulaşım", "Eğitim", "Diğer"]
+    elif tur == "Gelir": kats = ["Maaş", "Ek Gelir", "Borç Alacak"]
+    else: kats = ["Altın", "Gümüş", "Döviz", "Borsa", "Bitcoin"]
     
-    # HATA DÜZELTME: Tür değişince kategoriyi sıfırlamak için key'e 'tur' ekledik
     kat = st.selectbox("Kategori", kats, key=f"kat_select_{tur}")
-    
     miktar = st.text_input("Miktar (Örn: 5.5 Gram)") if tur == "Yatırım" else ""
     aciklama = st.text_input("Açıklama")
     tutar_input = st.text_input("Tutar (Örn: 1500,50)")
@@ -102,12 +94,9 @@ with st.sidebar:
         if taksitli: t_sayi = st.slider("Taksit", 2, 12, 3)
 
     if st.button("KAYDET 💾"):
-        if not tutar_input:
-            st.error("Lütfen bir tutar girin!")
-        else:
+        if tutar_input:
             tutar_f = float(tutar_input.replace(".", "").replace(",", "."))
             ay_map = {1:"Ocak",2:"Şubat",3:"Mart",4:"Nisan",5:"Mayıs",6:"Haziran",7:"Temmuz",8:"Ağustos",9:"Eylül",10:"Ekim",11:"Kasım",12:"Aralık"}
-            
             rows = []
             if taksitli:
                 pay = tutar_f / t_sayi
@@ -117,7 +106,6 @@ with st.sidebar:
             else:
                 desc = f"[{miktar}] {aciklama}" if miktar else aciklama
                 rows.append([str(tarih.strftime("%Y-%m-%d")), ay_map[tarih.month], tarih.year, kat, desc, str(tutar_f).replace(".", ","), tur])
-            
             get_client().open(SHEET_ADI).sheet1.append_rows(rows, value_input_option='USER_ENTERED')
             st.success("Kaydedildi!")
             st.rerun()
@@ -134,12 +122,10 @@ if not df.empty:
     df_f = df[df["Yıl"] == s_yil]
     if s_ay != "Tümü": df_f = df_f[df_f["Ay"] == s_ay]
 
-    # Metrikler
+    m1, m2, m3, m4 = st.columns(4)
     gelir = df_f[df_f["Tur"] == "Gelir"]["Tutar"].sum()
     gider = df_f[df_f["Tur"] == "Gider"]["Tutar"].sum()
     yatirim = df_f[df_f["Tur"] == "Yatırım"]["Tutar"].sum()
-
-    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Gelir", f"{gelir:,.2f} ₺")
     m2.metric("Gider", f"{gider:,.2f} ₺")
     m3.metric("Yatırım", f"{yatirim:,.2f} ₺")
@@ -147,49 +133,48 @@ if not df.empty:
 
     st.divider()
 
-    # --- TABLAR ---
-    tab1, tab2 = st.tabs(["📉 Harcama Grafikleri", "💰 Portföy Kâr/Zarar"])
+    tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Portföy"])
 
     with tab1:
         c_g1, c_g2 = st.columns(2)
-        # Sadece Gider ve Yatırım içeren pasta grafiği
         df_pie = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
         if not df_pie.empty:
             fig1 = px.pie(df_pie, values="Tutar", names="Kategori", hole=0.4, title="Harcama Dağılımı")
             c_g1.plotly_chart(fig1, use_container_width=True)
-            
-            # Tür bazlı bar grafiği
             df_bar = df_f.groupby("Tur")["Tutar"].sum().reset_index()
             fig2 = px.bar(df_bar, x="Tur", y="Tutar", color="Tur", title="Bütçe Dengesi")
             c_g2.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info("Gösterilecek grafik verisi yok.")
 
     with tab2:
-        # SADECE YATIRIMLARI FİLTRELE
         df_y = df[df["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
             def portfoy_hesap(row):
                 d, c = str(row["Aciklama"]), str(row["Kategori"]).lower()
-                res = re.search(r'\[([\d\.,]+)\]', d)
-                if res:
-                    q = float(res.group(1).replace(",", "."))
-                    if "altın" in c: return q * g_altin
-                    if "gümüş" in c: return q * g_gumus
+                match = re.search(r'\[([\d\.,]+)', d) # RegEx hatası düzeltildi
+                if match:
+                    try:
+                        q_str = match.group(1).replace(",", ".")
+                        q = float(q_str)
+                        if "altın" in c: return q * g_altin
+                        if "gümüş" in c: return q * g_gumus
+                    except: return row["Tutar"]
                 return row["Tutar"]
             
-            df_y["Güncel Değer"] = df_y.apply(portfoy_hesap, axis=1)
-            df_y["Kâr/Zarar"] = df_y["Güncel Değer"] - df_y["Tutar"]
+            # Değerleri hesapla ve boş verileri 0 ile doldur
+            df_y["Güncel Değer"] = df_y.apply(portfoy_hesap, axis=1).fillna(0)
+            df_y["Kâr/Zarar"] = (df_y["Güncel Değer"] - df_y["Tutar"]).fillna(0)
             
             st.write("### 💎 Yatırım Durumu")
-            st.dataframe(df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel Değer", "Kâr/Zarar"]].style.format("{:,.2f} ₺"), use_container_width=True)
-        else:
-            st.info("Henüz yatırım kaydı yok.")
+            # HATA ÇÖZÜMÜ: Sütunları seçerken ve biçimlendirirken sayısal olmayanları temizledik
+            df_display = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel Değer", "Kâr/Zarar"]]
+            st.dataframe(df_display.style.format({
+                "Tutar": "{:,.2f} ₺",
+                "Güncel Değer": "{:,.2f} ₺",
+                "Kâr/Zarar": "{:,.2f} ₺"
+            }), use_container_width=True)
+        else: st.info("Henüz yatırım kaydı yok.")
 
-    # --- TÜM İŞLEMLER ---
     st.divider()
-    st.subheader("📋 Tüm İşlem Geçmişi")
+    st.subheader("📋 İşlem Geçmişi")
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
-
-else:
-    st.info("Veri yok.")
+else: st.info("Veri yok.")
