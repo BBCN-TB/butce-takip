@@ -7,6 +7,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
 
+# --- 1. AYARLAR VE MODERN TASARIM (CSS) ---
 SHEET_ADI = "Butce_Veritabanı"
 AYARLAR_TAB_ADI = "Ayarlar"
 
@@ -21,6 +22,7 @@ section[data-testid="stSidebar"] { background: #ffffff; }
 </style>
 """, unsafe_allow_html=True)
 
+# --- 2. GİRİŞ VE BAĞLANTI FONKSİYONLARI ---
 def check_password():
     if st.session_state.get("password_correct", False): return True
     if "LOGIN_SIFRE" not in st.secrets: return True
@@ -77,6 +79,7 @@ def veri_sil_toplu(indexler):
 
 df = veri_yukle()
 
+# --- 3. PİYASA FONKSİYONLARI ---
 def piyasa_cek():
     try:
         sh = get_client().open(SHEET_ADI).worksheet(AYARLAR_TAB_ADI)
@@ -97,11 +100,8 @@ def piyasa_guncelle(yeni_altin, yeni_gumus):
             ws.append_row(['gram_altin', 6400])
             ws.append_row(['gram_gumus', 80])
         
-        # Basit güncelleme: Hücreleri direkt hedefle (B2 ve B3 varsayımıyla)
-        # Daha güvenli yöntem: bul ve güncelle
         cell_gold = ws.find("gram_altin")
         ws.update_cell(cell_gold.row, cell_gold.col + 1, yeni_altin)
-        
         cell_silver = ws.find("gram_gumus")
         ws.update_cell(cell_silver.row, cell_silver.col + 1, yeni_gumus)
         return True
@@ -111,6 +111,7 @@ def piyasa_guncelle(yeni_altin, yeni_gumus):
 
 g_altin, g_gumus = piyasa_cek()
 
+# --- 4. KENAR ÇUBUĞU (PİYASA, EKLEME, SİLME) ---
 with st.sidebar:
     st.header("💰 Piyasalar")
     col_p1, col_p2 = st.columns(2)
@@ -189,6 +190,7 @@ with st.sidebar:
                     t_idx = df[df["Aciklama"] == base].index
                     if veri_sil_toplu(t_idx): st.rerun()
 
+# --- 5. DASHBOARD ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
@@ -224,7 +226,7 @@ if not df.empty:
             fig2 = px.bar(df_b, x="Tur", y="Tutar", color="Tur", title="Denge")
             c_g2.plotly_chart(fig2, use_container_width=True)
 
-with tab2:
+    with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
             # 1. HESAPLAMA (Güvenli Mod)
@@ -244,44 +246,40 @@ with tab2:
             df_y["Tutar"] = pd.to_numeric(df_y["Tutar"], errors='coerce').fillna(0)
             df_y["K/Z"] = df_y["Güncel"] - df_y["Tutar"]
             
-            # Renklendirme için durum sütunu
-            df_y["Durum"] = df_y["K/Z"].apply(lambda x: "Kâr" if x >= 0 else "Zarar")
-
             st.write(f"### 💎 {s_ay} {s_yil} Portföy Performansı")
 
-            # 2. GRAFİK: Daha Kompakt Kâr/Zarar Çubukları
-            fig_kz = px.bar(
-                df_y, 
-                x="Aciklama", 
-                y="K/Z", 
-                color="Durum",
-                color_discrete_map={"Kâr": "#00CC96", "Zarar": "#EF553B"},
-                title="Kâr/Zarar Özeti",
-                text_auto='.2s',
-                height=350 # <-- EKLENDİ: Yüksekliği 350 piksel ile sınırladık (daha kısa)
-            )
-            # Grafiğin kenar boşluklarını daraltarak daha derli toplu göster
-            fig_kz.update_layout(margin=dict(l=20, r=20, t=40, b=20))
-            
-            st.plotly_chart(fig_kz, use_container_width=True)
+            # 2. GRAFİK KALDIRILDI. SADECE TABLO GÖSTERİMİ:
 
-            # 3. TABLO: Rakamları Renklendirme
             df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel", "K/Z"]]
             
-            def renkli_kz(val):
-                color = '#00CC96' if val >= 0 else '#EF553B'
+            # Özel Formatlayıcı: Ok ve Para Birimi ekler
+            def kz_format(val):
+                if pd.isna(val): return "-"
+                prefix = "▲ " if val >= 0 else "▼ "
+                return prefix + "{:,.2f} ₺".format(val)
+
+            # Özel Renklendirici: CSS ile renk verir
+            def kz_color(val):
+                if pd.isna(val): return ""
+                color = '#00CC96' if val >= 0 else '#EF553B' # Yeşil / Kırmızı
                 return f'color: {color}; font-weight: bold'
 
             st.dataframe(
                 df_disp.style
                 .format({
                     "Tutar": "{:,.2f} ₺", 
-                    "Güncel": "{:,.2f} ₺", 
-                    "K/Z": "{:,.2f} ₺"
+                    "Güncel": "{:,.2f} ₺",
+                    "K/Z": kz_format # K/Z sütunu için özel format fonksiyonu
                 })
-                .map(renkli_kz, subset=['K/Z']),
+                .map(kz_color, subset=['K/Z']), # Sadece K/Z sütununu renklendir
                 use_container_width=True
             )
         else: 
             st.info("Veri yok.")
 
+    st.divider()
+    st.subheader("📋 İşlem Geçmişi")
+    df_f["Tutar"] = pd.to_numeric(df_f["Tutar"], errors='coerce').fillna(0)
+    st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
+else:
+    st.info("Veri yok.")
