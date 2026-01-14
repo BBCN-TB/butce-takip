@@ -6,6 +6,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
 import plotly.express as px
+import io # Excel indirme işlemi için gerekli kütüphane
 
 # --- 1. AYARLAR VE TASARIM ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -206,7 +207,10 @@ with st.sidebar:
     st.divider()
 
     st.subheader("➕ Yeni İşlem")
-    tarih = st.date_input("Tarih", datetime.today())
+    
+    # Tarih formatı (Türkçe format görünümü için)
+    tarih = st.date_input("Tarih", datetime.today(), format="DD.MM.YYYY")
+
     tur = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"], key="main_tur")
     
     if tur == "Gider": kats = ["Mutfak", "Kredi Kartı", "Kira", "Fatura", "Pazar", "Ulaşım", "Eğitim", "Diğer"]
@@ -269,6 +273,27 @@ with st.sidebar:
                     base = t_desc.strip()
                     t_idx = df[df["Aciklama"] == base].index
                     if veri_sil_toplu(t_idx): st.rerun()
+    
+    # --- YENİ EKLENEN EXCEL YEDEKLEME BÖLÜMÜ ---
+    st.divider()
+    st.header("⚙️ Araçlar")
+    if not df.empty:
+        # Excel dosyasını bellekte oluştur
+        buffer = io.BytesIO()
+        # Engine olarak 'xlsxwriter' veya 'openpyxl' kullanılabilir. 
+        # Streamlit Cloud'da 'xlsxwriter' kurulu değilse hata verebilir, 'pip install xlsxwriter' gerekebilir.
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Butce_Verileri')
+        
+        st.download_button(
+            label="📥 Excel Yedeği İndir",
+            data=buffer,
+            file_name=f"FinansPro_Yedek_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
+            mime="application/vnd.ms-excel",
+            use_container_width=True
+        )
+    else:
+        st.caption("Yedeklenecek veri yok.")
 
 # --- 4. ANA EKRAN ---
 st.title("📊 Akıllı Bütçe Yönetimi")
@@ -299,21 +324,18 @@ if not df.empty:
     with tab1:
         c_g1, c_g2 = st.columns(2)
         
-        # 1. HARCAMA ANALİZİ (Pasta Grafik)
-        # Sadece Gider ve Yatırım olanları filtrele
+        # 1. HARCAMA ANALİZİ
         df_p = df_f[df_f["Tur"].isin(["Gider", "Yatırım"])]
         
         if not df_p.empty:
             fig1 = px.pie(df_p, values="Tutar", names="Kategori", hole=0.4, title="Harcama Analizi")
             fig1.update_traces(textposition='inside', textinfo='percent+label')
             
-            # Ayarlar (Alt boşluk)
             fig1.update_layout(
                 legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
                 margin=dict(t=40, b=100, l=10, r=10) 
             )
             
-            # Karanlık mod ayarı
             if theme_toggle:
                 dark_layout = dict(
                     paper_bgcolor='rgba(0,0,0,0)', 
@@ -327,15 +349,14 @@ if not df.empty:
         else:
             c_g1.info("Harcama grafiği için veri yok.")
 
-        # 2. NAKİT AKIŞ ANALİZİ (Sütun Grafik) - ÖZEL RENKLER
+        # 2. NAKİT AKIŞ ANALİZİ
         if not df_f.empty:
             df_b = df_f.groupby("Tur")["Tutar"].sum().reset_index()
             
-            # --- GÜNCELLENMİŞ RENK HARİTASI ---
             renk_haritasi = {
                 "Gelir": "#008000",   # YEŞİL
                 "Gider": "#B81414",   # KIRMIZI
-                "Yatırım": "#00008b"  # MAVİ
+                "Yatırım": "#00008b"  # KOYU MAVİ
             }
             
             fig2 = px.bar(
@@ -345,10 +366,9 @@ if not df.empty:
                 color="Tur", 
                 title="Nakit Akış Analizi", 
                 text_auto='.2s',
-                color_discrete_map=renk_haritasi  # Renkleri uygula
+                color_discrete_map=renk_haritasi
             )
             
-            # Ayarlar (Alt boşluk ve Efsane konumu)
             fig2.update_layout(
                 xaxis_title=None, 
                 legend_title_text='', 
@@ -356,7 +376,6 @@ if not df.empty:
                 margin=dict(t=40, b=100, l=10, r=10)
             )
 
-            # Karanlık mod ayarı
             if theme_toggle:
                 dark_layout = dict(
                     paper_bgcolor='rgba(0,0,0,0)', 
@@ -369,7 +388,7 @@ if not df.empty:
             c_g2.plotly_chart(fig2, use_container_width=True)
         else:
             c_g2.info("Akış grafiği için veri yok.")
-            
+
     with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
@@ -432,8 +451,3 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
-
-
-
-
-
