@@ -316,8 +316,8 @@ if not df.empty:
             # Renk Haritası
             renk_haritasi = {
                 "Gelir": "#00CC96",   # YEŞİL
-                "Gider": "#EF553B",   # KIRMIZI
-                "Yatırım": "#1F77B4"  # KOYU MAVİ
+                "Gider": "B81414",   # KIRMIZI
+                "Yatırım": "1453b1"  # KOYU MAVİ
             }
             
             fig2 = px.bar(
@@ -414,5 +414,6 @@ if not df.empty:
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else:
     st.info("Veri yok.")
+
 
 
