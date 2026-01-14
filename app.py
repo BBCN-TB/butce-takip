@@ -85,9 +85,45 @@ def piyasa_cek():
         return float(str(d.get('gram_altin', 6400)).replace(",", ".")), float(str(d.get('gram_gumus', 80)).replace(",", "."))
     except: return 6400.0, 80.0
 
+def piyasa_guncelle(yeni_altin, yeni_gumus):
+    try:
+        client = get_client()
+        sh = client.open(SHEET_ADI)
+        try:
+            ws = sh.worksheet(AYARLAR_TAB_ADI)
+        except:
+            ws = sh.add_worksheet(title=AYARLAR_TAB_ADI, rows=10, cols=5)
+            ws.append_row(['Parametre', 'Deger'])
+            ws.append_row(['gram_altin', 6400])
+            ws.append_row(['gram_gumus', 80])
+        
+        # Basit güncelleme: Hücreleri direkt hedefle (B2 ve B3 varsayımıyla)
+        # Daha güvenli yöntem: bul ve güncelle
+        cell_gold = ws.find("gram_altin")
+        ws.update_cell(cell_gold.row, cell_gold.col + 1, yeni_altin)
+        
+        cell_silver = ws.find("gram_gumus")
+        ws.update_cell(cell_silver.row, cell_silver.col + 1, yeni_gumus)
+        return True
+    except Exception as e:
+        st.error(f"Piyasa güncelleme hatası: {e}")
+        return False
+
 g_altin, g_gumus = piyasa_cek()
 
 with st.sidebar:
+    st.header("💰 Piyasalar")
+    col_p1, col_p2 = st.columns(2)
+    yeni_altin_val = col_p1.number_input("Gram Altın", value=g_altin, step=10.0)
+    yeni_gumus_val = col_p2.number_input("Gram Gümüş", value=g_gumus, step=1.0)
+    
+    if st.button("Fiyatları Güncelle 🔄"):
+        if piyasa_guncelle(yeni_altin_val, yeni_gumus_val):
+            st.success("Güncellendi!")
+            st.rerun()
+    
+    st.divider()
+
     st.title("➕ Yeni İşlem")
     tarih = st.date_input("Tarih", datetime.today())
     tur = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"], key="main_tur")
