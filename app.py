@@ -6,7 +6,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
 import plotly.express as px
-import io # Excel indirme işlemi için gerekli kütüphane
+import io 
 
 # --- 1. AYARLAR VE TASARIM ---
 SHEET_ADI = "Butce_Veritabanı"
@@ -21,13 +21,9 @@ if theme_toggle:
     # --- DARK MODE ---
     st.markdown("""
     <style>
-    /* Ana Arka Plan */
     .stApp { background-color: #0E1117; color: #FAFAFA; }
-    
-    /* Sidebar */
     section[data-testid="stSidebar"] { background-color: #262730; }
     
-    /* METRİK KARTLARI */
     div[data-testid="stMetric"] {
         background-color: #1F2937;
         border: 1px solid #374151;
@@ -37,7 +33,6 @@ if theme_toggle:
     div[data-testid="stMetricLabel"] p { color: #9CA3AF !important; font-size: 14px !important; }
     div[data-testid="stMetricValue"] div { color: #FFFFFF !important; font-size: 24px !important; font-weight: bold !important; }
 
-    /* GRAFİK KUTULARI */
     div[data-testid="stPlotlyChart"] {
         background-color: #1F2937;
         border: 1px solid #374151;
@@ -45,7 +40,6 @@ if theme_toggle:
         padding: 10px;
     }
 
-    /* TABLOLAR */
     div[data-testid="stDataFrame"] {
         background-color: #1F2937;
         border: 1px solid #374151;
@@ -53,22 +47,18 @@ if theme_toggle:
     }
     div[data-testid="stDataFrame"] * { color: #E5E7EB !important; }
 
-    /* Input Alanları */
     .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
         color: white !important;
         background-color: #374151 !important;
     }
     
-    /* Genel Yazılar */
     h1, h2, h3, p { color: #E5E7EB !important; }
     
-    /* Butonlar */
     .stButton > button {
         background: linear-gradient(to right, #374151, #111827);
         color: white;
         border: 1px solid #4B5563;
     }
-    /* Sekme Başlıkları */
     .stTabs [data-baseweb="tab"] { color: #9CA3AF; }
     .stTabs [aria-selected="true"] { color: #FFFFFF !important; }
     </style>
@@ -208,7 +198,6 @@ with st.sidebar:
 
     st.subheader("➕ Yeni İşlem")
     
-    # Tarih formatı (Türkçe format görünümü için)
     tarih = st.date_input("Tarih", datetime.today(), format="DD.MM.YYYY")
 
     tur = st.selectbox("Tür", ["Gider", "Gelir", "Yatırım"], key="main_tur")
@@ -274,24 +263,24 @@ with st.sidebar:
                     t_idx = df[df["Aciklama"] == base].index
                     if veri_sil_toplu(t_idx): st.rerun()
     
-    # --- YENİ EKLENEN EXCEL YEDEKLEME BÖLÜMÜ ---
+    # --- ARAÇLAR (Excel Yedek) ---
     st.divider()
     st.header("⚙️ Araçlar")
     if not df.empty:
-        # Excel dosyasını bellekte oluştur
         buffer = io.BytesIO()
-        # Engine olarak 'xlsxwriter' veya 'openpyxl' kullanılabilir. 
-        # Streamlit Cloud'da 'xlsxwriter' kurulu değilse hata verebilir, 'pip install xlsxwriter' gerekebilir.
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Butce_Verileri')
-        
-        st.download_button(
-            label="📥 Excel Yedeği İndir",
-            data=buffer,
-            file_name=f"FinansPro_Yedek_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
-            mime="application/vnd.ms-excel",
-            use_container_width=True
-        )
+        try:
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='Butce_Verileri')
+            
+            st.download_button(
+                label="📥 Excel Yedeği İndir",
+                data=buffer,
+                file_name=f"FinansPro_Yedek_{datetime.now().strftime('%d-%m-%Y')}.xlsx",
+                mime="application/vnd.ms-excel",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"Excel oluşturma hatası: {e}")
     else:
         st.caption("Yedeklenecek veri yok.")
 
@@ -319,7 +308,8 @@ if not df.empty:
 
     st.divider()
 
-    tab1, tab2 = st.tabs(["📉 Grafikler", "💰 Portföy"])
+    # --- YENİ TAB YAPISI (GELECEK EKLENDİ) ---
+    tab1, tab2, tab3 = st.tabs(["📉 Grafikler", "💰 Portföy", "🔮 Gelecek"])
 
     with tab1:
         c_g1, c_g2 = st.columns(2)
@@ -444,6 +434,47 @@ if not df.empty:
             )
         else: 
             st.info("Veri yok.")
+
+    # --- 3. YENİ SEKME: GELECEK ---
+    with tab3:
+        st.subheader("📅 Gelecek Ayların Borç Yükü (Taksitler)")
+        
+        # Tarihleri güvenli çevir
+        df['Tarih_DT'] = pd.to_datetime(df['Tarih'], errors='coerce')
+        
+        # Bugünden sonraki VE Gider olanları bul
+        gelecek_giderler = df[(df['Tarih_DT'] > datetime.now()) & (df['Tur'] == 'Gider')].copy()
+        
+        if not gelecek_giderler.empty:
+            # Özet Tablo Oluştur
+            ozet = gelecek_giderler.groupby(['Yıl', 'Ay'])['Tutar'].sum().reset_index()
+            
+            # Grafikle Göster
+            fig_gelecek = px.bar(
+                ozet, 
+                x="Ay", 
+                y="Tutar", 
+                color="Yıl", 
+                title="Gelecek Aylarda Ödenecek Taksit Toplamları", 
+                text_auto='.2s'
+            )
+            
+            if theme_toggle:
+                dark_layout = dict(
+                    paper_bgcolor='rgba(0,0,0,0)', 
+                    plot_bgcolor='rgba(0,0,0,0)',  
+                    font=dict(color='#E5E7EB'),    
+                    title_font=dict(color='#FAFAFA') 
+                )
+                fig_gelecek.update_layout(**dark_layout)
+
+            st.plotly_chart(fig_gelecek, use_container_width=True)
+            
+            # Detaylı Tablo
+            st.write("Detaylı Döküm:")
+            st.dataframe(gelecek_giderler[['Tarih', 'Kategori', 'Aciklama', 'Tutar']].sort_values('Tarih').style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
+        else:
+            st.success("🎉 Harika! Gelecek dönemler için kayıtlı bir borç/taksit görünmüyor.")
 
     st.divider()
     st.subheader("📋 İşlem Geçmişi")
