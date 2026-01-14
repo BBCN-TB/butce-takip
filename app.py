@@ -227,6 +227,7 @@ if not df.empty:
     with tab2:
         df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
         if not df_y.empty:
+            # 1. HESAPLAMA (Güvenli Mod)
             def calc_safe(row):
                 d, c = str(row["Aciklama"]), str(row["Kategori"]).lower()
                 m = re.search(r'\[([\d\.,]+)', d)
@@ -243,16 +244,40 @@ if not df.empty:
             df_y["Tutar"] = pd.to_numeric(df_y["Tutar"], errors='coerce').fillna(0)
             df_y["K/Z"] = df_y["Güncel"] - df_y["Tutar"]
             
-            st.write(f"### 💎 {s_ay} {s_yil} Yatırım Durumu")
-            df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel", "K/Z"]]
-            st.dataframe(df_disp.style.format({
-                "Tutar": "{:,.2f} ₺", "Güncel": "{:,.2f} ₺", "K/Z": "{:,.2f} ₺"
-            }), use_container_width=True)
-        else: st.info("Veri yok.")
+            # Renklendirme için durum sütunu (Grafik İçin)
+            df_y["Durum"] = df_y["K/Z"].apply(lambda x: "Kâr" if x >= 0 else "Zarar")
 
-    st.divider()
-    st.subheader("📋 İşlem Geçmişi")
-    df_f["Tutar"] = pd.to_numeric(df_f["Tutar"], errors='coerce').fillna(0)
-    st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
-else:
-    st.info("Veri yok.")
+            st.write(f"### 💎 {s_ay} {s_yil} Portföy Performansı")
+
+            # 2. GRAFİK: Kâr/Zarar Çubukları (Yeşil/Kırmızı)
+            fig_kz = px.bar(
+                df_y, 
+                x="Aciklama", 
+                y="K/Z", 
+                color="Durum",
+                color_discrete_map={"Kâr": "#00CC96", "Zarar": "#EF553B"}, # Yeşil ve Kırmızı Tonları
+                title="Yatırım Bazlı Kâr/Zarar Durumu",
+                text_auto='.2s'
+            )
+            st.plotly_chart(fig_kz, use_container_width=True)
+
+            # 3. TABLO: Rakamları Renklendirme
+            df_disp = df_y[["Tarih", "Kategori", "Aciklama", "Tutar", "Güncel", "K/Z"]]
+            
+            # Pandas Styler fonksiyonu
+            def renkli_kz(val):
+                color = '#00CC96' if val >= 0 else '#EF553B' # Yeşil : Kırmızı
+                return f'color: {color}; font-weight: bold'
+
+            st.dataframe(
+                df_disp.style
+                .format({
+                    "Tutar": "{:,.2f} ₺", 
+                    "Güncel": "{:,.2f} ₺", 
+                    "K/Z": "{:,.2f} ₺"
+                })
+                .map(renkli_kz, subset=['K/Z']), # Sadece K/Z sütununu boyar
+                use_container_width=True
+            )
+        else: 
+            st.info("Veri yok.")
