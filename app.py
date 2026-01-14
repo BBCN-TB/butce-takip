@@ -97,6 +97,28 @@ def piyasa_cek():
 
 g_altin, g_gumus = piyasa_cek()
 
+# --- VERİ SİLME FONKSİYONU ---
+def veri_sil_toplu(indexler):
+    try:
+        # Mevcut veriyi tekrar çek (en güncel hali için)
+        sh = get_client().open(SHEET_ADI).sheet1
+        tum_veriler = sh.get_all_values()
+        header = tum_veriler[0]
+        df_mevcut = pd.DataFrame(tum_veriler[1:], columns=header)
+        
+        # Seçilen satırları index numarasına göre uçur
+        df_yeni = df_mevcut.drop(index=indexler)
+        
+        # Sayfayı komple temizle ve başlıkla birlikte yeni listeyi yaz
+        sh.clear()
+        sh.append_row(header)
+        if not df_yeni.empty:
+            sh.append_rows(df_yeni.values.tolist(), value_input_option='USER_ENTERED')
+        return True
+    except Exception as e:
+        st.error(f"Silme işlemi sırasında hata oluştu: {e}")
+        return False
+
 # --- 4. KENAR ÇUBUĞU (İŞLEM EKLEME) ---
 with st.sidebar:
     st.title("➕ Yeni İşlem")
@@ -189,6 +211,60 @@ if not df.empty:
 
     st.divider()
     st.subheader("📋 İşlem Geçmişi")
-    st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
-else:
+    # --- 6. TÜM İŞLEMLER VE SİLME PANELİ ---
+    st.divider()
+    st.subheader("📋 İşlem Geçmişi")
+    st.info("💡 Silmek istediğiniz satırları tablonun solundaki kutucuklardan seçebilirsiniz.")
+
+    # Veriyi tarihe göre sıralı göster
+    df_gecmis = df_f.sort_values("Tarih", ascending=False)
+    
+    # SEÇİLEBİLİR TABLO
+    # Bu tablo üzerinden satır seçtiğinde 'secilen_satirlar' değişkeni dolacak
+    secilen_satirlar = st.dataframe(
+        df_gecmis.style.format({"Tutar": "{:,.2f} ₺"}), 
+        use_container_width=True,
+        on_select="rerun",           # Seçim yapınca sayfayı tetikle
+        selection_mode="multi-row"    # Çoklu satır seçimine izin ver
+    )
+
+    # Eğer en az bir satır seçildiyse Silme Butonlarını göster
+    if len(secilen_satirlar.selection.rows) > 0:
+        st.warning(f"⚠️ {len(secilen_satirlar.selection.rows)} işlem seçildi. Ne yapmak istersiniz?")
+        
+        col_sil1, col_sil2 = st.columns(2)
+        
+        # SADECE SEÇİLENLERİ SİL
+        if col_sil1.button("Seçilen Satırları Sil 🗑️", type="primary"):
+            # Orijinal dataframe indexlerini alıyoruz
+            secilen_indexler = df_gecmis.iloc[secilen_satirlar.selection.rows].index
+            if veri_sil_toplu(secilen_indexler):
+                st.success("İşlemler başarıyla silindi!")
+                st.rerun()
+
+        # TÜM TAKSİT GRUBUNU SİL
+        if col_sil2.button("Seçilenin Tüm Taksitlerini Sil 🔄"):
+            secilen_veriler = df_gecmis.iloc[secilen_satirlar.selection.rows]
+            silinecek_ek_indexler = []
+            
+            for _, row in secilen_veriler.iterrows():
+                aciklama = str(row["Aciklama"])
+                # Regex ile taksit ibaresini (Örn: " (1/3.Tks)") temizleyip ana ismi bulur
+                match = re.search(r"(.+?)\s\(\d+/\d+\.Tks\)", aciklama)
+                if match:
+                    temel_isim = match.group(1).strip()
+                    # Veritabanında bu ismi içeren tüm satırları bul
+                    taksit_indexleri = df[df["Aciklama"].str.contains(re.escape(temel_isim), na=False)].index
+                    silinecek_ek_indexler.extend(taksit_indexleri)
+            
+            # Tekrar eden indexleri temizle
+            toplam_silinecek = list(set(silinecek_ek_indexler))
+            
+            if toplam_silinecek:
+                if veri_sil_toplu(toplam_silinecek):
+                    st.success(f"Taksit serisine ait {len(toplam_silinecek)} kayıt silindi!")
+                    st.rerun()
+            else:
+                st.error("Seçtiğiniz işlem taksitli bir seri gibi görünmüyor.")
     st.info("Veri yok.")
+
