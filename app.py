@@ -146,19 +146,11 @@ if not df.empty:
             c_g2.plotly_chart(fig2, use_container_width=True)
 
     with tab2:
-        df_y = df[df["Tur"] == "Yatırım"].copy()
-        if not df_y.empty:
-            def portfoy_hesap(row):
-                d, c = str(row["Aciklama"]), str(row["Kategori"]).lower()
-                match = re.search(r'\[([\d\.,]+)', d) # RegEx hatası düzeltildi
-                if match:
-                    try:
-                        q_str = match.group(1).replace(",", ".")
-                        q = float(q_str)
-                        if "altın" in c: return q * g_altin
-                        if "gümüş" in c: return q * g_gumus
-                    except: return row["Tutar"]
-                return row["Tutar"]
+    # SADECE seçilen Yıl ve Ay'a göre filtrelenmiş Yatırımları al
+    df_y = df_f[df_f["Tur"] == "Yatırım"].copy()
+    
+    if not df_y.empty:
+        # Geri kalan hesaplama fonksiyonları ve st.dataframe kısmı aynı kalacak...
             
             # Değerleri hesapla ve boş verileri 0 ile doldur
             df_y["Güncel Değer"] = df_y.apply(portfoy_hesap, axis=1).fillna(0)
@@ -178,3 +170,4 @@ if not df.empty:
     st.subheader("📋 İşlem Geçmişi")
     st.dataframe(df_f.sort_values("Tarih", ascending=False).style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
 else: st.info("Veri yok.")
+
