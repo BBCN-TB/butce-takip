@@ -263,7 +263,7 @@ with st.sidebar:
                     t_idx = df[df["Aciklama"] == base].index
                     if veri_sil_toplu(t_idx): st.rerun()
     
-    # --- ARAÇLAR (Excel Yedek) ---
+    # --- ARAÇLAR ---
     st.divider()
     st.header("⚙️ Araçlar")
     if not df.empty:
@@ -284,14 +284,43 @@ with st.sidebar:
     else:
         st.caption("Yedeklenecek veri yok.")
 
-# --- 4. ANA EKRAN ---
+# --- 4. ANA EKRAN (HAFIZALI FİLTRE SİSTEMİ) ---
 st.title("📊 Akıllı Bütçe Yönetimi")
 
 if not df.empty:
     col_f1, col_f2 = st.columns(2)
     yil_list = sorted(df["Yıl"].dropna().unique().astype(int), reverse=True)
-    s_yil = col_f1.selectbox("Yıl Filtre", yil_list)
-    s_ay = col_f2.selectbox("Ay Filtre", ["Tümü"] + list(df["Ay"].unique()))
+    ay_listesi = ["Tümü"] + list(df["Ay"].unique())
+
+    # --- HAFIZA (SESSION STATE) MANTIĞI ---
+    # 1. Varsayılan değerleri belirle (Eğer ilk kez açılıyorsa)
+    if "secili_yil" not in st.session_state:
+        st.session_state["secili_yil"] = yil_list[0] if yil_list else datetime.now().year
+    if "secili_ay" not in st.session_state:
+        st.session_state["secili_ay"] = "Tümü"
+
+    # 2. Şu anki hafızadaki değerin listedeki sırasını (index) bul
+    try:
+        idx_yil = yil_list.index(st.session_state["secili_yil"])
+    except ValueError:
+        idx_yil = 0 # Listede yoksa ilki seç
+
+    try:
+        idx_ay = ay_listesi.index(st.session_state["secili_ay"])
+    except ValueError:
+        idx_ay = 0
+
+    # 3. Değişiklik olduğunda hafızayı güncelleyen fonksiyonlar
+    def update_yil():
+        st.session_state["secili_yil"] = st.session_state.filtre_yil_key
+    def update_ay():
+        st.session_state["secili_ay"] = st.session_state.filtre_ay_key
+
+    # 4. Selectboxları çiz (Hafızadan gelen index ile)
+    s_yil = col_f1.selectbox("Yıl Filtre", yil_list, index=idx_yil, key="filtre_yil_key", on_change=update_yil)
+    s_ay = col_f2.selectbox("Ay Filtre", ay_listesi, index=idx_ay, key="filtre_ay_key", on_change=update_ay)
+    
+    # ----------------------------------------
     
     df_f = df[df["Yıl"] == s_yil]
     if s_ay != "Tümü": df_f = df_f[df_f["Ay"] == s_ay]
@@ -308,7 +337,6 @@ if not df.empty:
 
     st.divider()
 
-    # --- YENİ TAB YAPISI (GELECEK EKLENDİ) ---
     tab1, tab2, tab3 = st.tabs(["📉 Grafikler", "💰 Portföy", "🔮 Gelecek"])
 
     with tab1:
@@ -439,17 +467,12 @@ if not df.empty:
     with tab3:
         st.subheader("📅 Gelecek Ayların Borç Yükü (Taksitler)")
         
-        # Tarihleri güvenli çevir
         df['Tarih_DT'] = pd.to_datetime(df['Tarih'], errors='coerce')
-        
-        # Bugünden sonraki VE Gider olanları bul
         gelecek_giderler = df[(df['Tarih_DT'] > datetime.now()) & (df['Tur'] == 'Gider')].copy()
         
         if not gelecek_giderler.empty:
-            # Özet Tablo Oluştur
             ozet = gelecek_giderler.groupby(['Yıl', 'Ay'])['Tutar'].sum().reset_index()
             
-            # Grafikle Göster
             fig_gelecek = px.bar(
                 ozet, 
                 x="Ay", 
@@ -470,7 +493,6 @@ if not df.empty:
 
             st.plotly_chart(fig_gelecek, use_container_width=True)
             
-            # Detaylı Tablo
             st.write("Detaylı Döküm:")
             st.dataframe(gelecek_giderler[['Tarih', 'Kategori', 'Aciklama', 'Tutar']].sort_values('Tarih').style.format({"Tutar": "{:,.2f} ₺"}), use_container_width=True)
         else:
